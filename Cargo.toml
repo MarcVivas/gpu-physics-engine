@@ -3,8 +3,27 @@ name = "game-engine"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
+anyhow = "1.0"
 env_logger = "0.11.8"
 log = "0.4.27"
+pollster = "0.4.0"
 wgpu = "25.0.2"
-winit = { version = "0.29", features = ["android-native-activity"] }
+winit = { version = "0.30", features = ["android-native-activity"] }
+wasm-bindgen = "0.2.100"
+wasm-bindgen-futures = "0.4.50"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_error_panic_hook = "0.1.6"
+console_log = "1.0"
+wgpu = { version = "25.0.2", features = ["webgl"]}
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4.30"
+web-sys = { version = "0.3.69", features = [
+    "Document",
+    "Window",
+    "Element",
+]}
