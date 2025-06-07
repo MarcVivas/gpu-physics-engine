@@ -1,4 +1,4 @@
-
+use std::ops::BitAnd;
 use std::sync::Arc;
 use winit::{
     event::*,
@@ -10,6 +10,7 @@ use winit::{
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+use wgpu::include_wgsl;
 
 // This will store the state of our game
 pub struct State {
@@ -19,6 +20,8 @@ pub struct State {
     config: wgpu::SurfaceConfiguration,
     is_surface_configured: bool,
     window: Arc<Window>,
+    background_color: wgpu::Color,
+    render_pipeline: wgpu::RenderPipeline,
 }
 
 impl State {
@@ -73,7 +76,56 @@ impl State {
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
+        
 
+        let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/renderShaders/shader.wgsl"));
+        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
+            label: Some("Render Pipeline Layout"),
+            bind_group_layouts: &[],
+            push_constant_ranges: &[],
+        });
+        
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor{
+            label: Some("Render pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState{
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState{
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default()
+            }),
+            
+            primitive: wgpu::PrimitiveState{
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None, 
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+                
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+        
+        
         Ok(Self {
             surface,
             device,
@@ -81,6 +133,8 @@ impl State {
             config,
             is_surface_configured: false,
             window,
+            background_color: wgpu::Color {r:0.3, g:0.1, b:0.3, a:1.0},
+            render_pipeline
         })
         
     }
@@ -106,7 +160,14 @@ impl State {
     }
     
     fn input(&mut self, event: &WindowEvent){
-        todo!()
+        match event {
+            WindowEvent::CursorMoved { position, .. } => {
+                let size = self.window.inner_size();
+                self.background_color.r = position.x / size.width as f64;
+                self.background_color.g = position.y / size.height as f64;
+            },
+            _ => {}
+        }
     }
     
     fn update(&mut self){
@@ -133,25 +194,24 @@ impl State {
         
         // Use encoder to create a RenderPass
         {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor{
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor{
                 label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment{
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color{
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    }
-                })],
+                color_attachments: &[
+                    Some(wgpu::RenderPassColorAttachment{
+                        view: &view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(self.background_color),
+                            store: wgpu::StoreOp::Store,
+                        }
+                    })],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.draw(0..3, 0..1);
         }
         
         
@@ -270,10 +330,11 @@ impl ApplicationHandler<State> for App {
                     },
                 ..
             } => state.handle_key(event_loop, code, key_state.is_pressed()),
+            WindowEvent::CursorMoved { .. } => state.input(&event),
             _ => {}
         }
-        }
     }
+}
 
 
 pub fn run() -> anyhow::Result<()>{
