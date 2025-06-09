@@ -46,4 +46,20 @@ impl SurfaceManager {
             self.is_surface_configured = true;
         }
     }
+    
+    pub fn is_surface_configured(&self) -> bool {
+        self.is_surface_configured
+    }
+    
+    pub fn get_window(&self) -> &Arc<Window> {
+        &self.window
+    }
+    
+    pub fn get_surface(&self) -> &wgpu::Surface<'static> {
+        &self.surface
+    }
+    
+    pub fn get_config(&self) -> &wgpu::SurfaceConfiguration {
+        &self.config
+    }
 }

@@ -1,25 +1,24 @@
-mod camera;
-use camera::{Camera, CameraUniform};
+use renderer::camera::{Camera, CameraUniform};
 
 mod render_timer;
-use render_timer::{RenderTimer};
+use render_timer::RenderTimer;
 
 mod input_manager;
-use input_manager::{InputManager};
-
+use input_manager::InputManager;
 mod surface_manager;
-use surface_manager::{SurfaceManager};
+
+mod renderer;
+use renderer::renderer::Renderer;
 
 mod wgpu_context;
-use wgpu_context::{WgpuContext};
+use wgpu_context::WgpuContext;
 
 use std::sync::Arc;
 use glam::Vec3;
 use winit::{
-    event::*,
-    event_loop::{EventLoop, ActiveEventLoop},
-    keyboard::{KeyCode, PhysicalKey},
     application::ApplicationHandler,
+    event::*,
+    event_loop::{ActiveEventLoop, EventLoop},
     window::Window
 };
 
@@ -31,17 +30,13 @@ use wgpu::util::DeviceExt;
 pub struct State {
     wgpu_context: WgpuContext,
     background_color: wgpu::Color,
-    render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     num_vertices: u32,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
-    camera: Camera,
-    camera_uniform: CameraUniform,
-    camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
     render_timer: RenderTimer,
     input_manager: InputManager,
+    renderer: Renderer,
 }
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -76,17 +71,15 @@ const INDICES: &[u16] = &[
 impl State {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let wgpu_context = WgpuContext::new(window).await?;
-      
-
-
-
-        let vertex_buffer = wgpu_context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor{
+        let mut renderer = Renderer::new(&wgpu_context).unwrap();
+        
+        let vertex_buffer = wgpu_context.get_device().create_buffer_init(&wgpu::util::BufferInitDescriptor{
             label: Some("Vertex buffer"),
             contents: bytemuck::cast_slice(VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        let index_buffer = wgpu_context.device.create_buffer_init(
+        let index_buffer = wgpu_context.get_device().create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
                 contents: bytemuck::cast_slice(INDICES),
@@ -132,25 +125,13 @@ impl State {
         let zoom = zoom_x.min(zoom_y) * 0.9; // Use 90% of the screen for some padding
 
         // 4. Create the camera with the calculated values
-        let camera = Camera::new(center, zoom);
+        let camera = Camera::new(center, zoom, &wgpu_context);
 
-        // 1. Create the Camera controller and the initial uniform data
-        let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&camera, window_size.width as f32, window_size.height as f32);
 
-        // 2. Create the wgpu::Buffer
-        let camera_buffer = wgpu_context.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Camera Buffer"),
-                contents: bytemuck::cast_slice(&[camera_uniform]),
-                // COPY_DST allows us to update the buffer later.
-                // UNIFORM tells wgpu we'll use it in a bind group.
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
 
+      
         // 3. Create the Bind Group Layout (the "template")
-        let camera_bind_group_layout = wgpu_context.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        let camera_bind_group_layout = wgpu_context.get_device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     // This binding number must match the shader e.g. `@binding(0)`
@@ -168,27 +149,17 @@ impl State {
             label: Some("Camera Bind Group Layout"),
         });
 
-        // 4. Create the Bind Group (the "instance")
-        let camera_bind_group = wgpu_context.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera_buffer.as_entire_binding(),
-                }
-            ],
-            label: Some("Camera Bind Group"),
-        });
+     
 
 
-        let shader = wgpu_context.device.create_shader_module(wgpu::include_wgsl!("shaders/renderShaders/shader.wgsl"));
-        let render_pipeline_layout = wgpu_context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
+        let shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("shaders/renderShaders/shader.wgsl"));
+        let render_pipeline_layout = wgpu_context.get_device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
             label: Some("Render Pipeline Layout"),
             bind_group_layouts: &[&camera_bind_group_layout],
             push_constant_ranges: &[],
         });
 
-        let render_pipeline = wgpu_context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor{
+        let render_pipeline = wgpu_context.get_device().create_render_pipeline(&wgpu::RenderPipelineDescriptor{
             label: Some("Render pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
@@ -201,7 +172,7 @@ impl State {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState{
-                    format: wgpu_context.surface_manager.config.format,
+                    format: wgpu_context.get_surface_config().format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -228,6 +199,7 @@ impl State {
             cache: None,
         });
         
+        renderer.add_pipeline(render_pipeline);
         let render_timer = RenderTimer::new();
         
         let input_manager = InputManager::new();
@@ -235,28 +207,19 @@ impl State {
         Ok(Self {
             wgpu_context,
             background_color: wgpu::Color {r:0.3, g:0.1, b:0.3, a:1.0},
-            render_pipeline,
             vertex_buffer,
             num_vertices,
             index_buffer,
             num_indices,
-            camera,
-            camera_buffer,
-            camera_uniform,
-            camera_bind_group,
             render_timer,
             input_manager,
+            renderer
             
         })
         
     }
     
-
-    
-   
-
-   
-    
+       
     fn input(&mut self, event: &WindowEvent, event_loop: &ActiveEventLoop){
         match event {
             WindowEvent::Resized(size ) => self.wgpu_context.resize(size.width, size.height),
@@ -282,61 +245,11 @@ impl State {
         let delta = self.render_timer.get_delta();
         println!("{:?}", delta.as_secs_f32() * 1000.0);
         // Recalculate the matrix
-        self.camera_uniform.update_view_proj(&self.camera, self.wgpu_context.window_size().width as f32, self.wgpu_context.window_size().height as f32);
-        self.wgpu_context.queue.write_buffer(
-            &self.camera_buffer,
-            0, // offset
-            bytemuck::cast_slice(&[self.camera_uniform])
-        );
+        self.renderer.update_camera(&self.wgpu_context);
     }
     
     fn render(&mut self)  -> Result<(), wgpu::SurfaceError>{
-        self.wgpu_context.surface_manager.window.request_redraw();
-        
-        // We can't render unless the window is configured
-        if !self.wgpu_context.surface_manager.is_surface_configured {
-            return Ok(());
-        }
-        
-        // This is where we render
-        let output = self.wgpu_context.surface_manager.surface.get_current_texture()?;
-        
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
-        // We need an encoder to create the actual commands to send to the gpu
-        let mut encoder = self.wgpu_context.device.create_command_encoder(&wgpu::CommandEncoderDescriptor{
-            label: Some("Render Encoder"),
-        });
-        
-        // Use encoder to create a RenderPass
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor{
-                label: Some("Render Pass"),
-                color_attachments: &[
-                    Some(wgpu::RenderPassColorAttachment{
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(self.background_color),
-                            store: wgpu::StoreOp::Store,
-                        }
-                    })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
-        }
-        
-        
-        self.wgpu_context.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
-        
+        self.renderer.render(&self.wgpu_context)?;
         Ok(())
     }
 }
@@ -363,7 +276,9 @@ impl App {
 impl ApplicationHandler<State> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         #[allow(unused_mut)]
-        let mut window_attributes = Window::default_attributes();
+        let mut window_attributes = Window::default_attributes()
+            .with_title("")
+            .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 720.0));
 
 
         #[cfg(target_arch = "wasm32")]
@@ -410,10 +325,10 @@ impl ApplicationHandler<State> for App {
         // This is where proxy.send_event() ends up
         #[cfg(target_arch = "wasm32")]
         {
-            event.window.request_redraw();
+            event.wgpu_context.get_window().request_redraw();
             event.resize(
-                event.window.inner_size().width,
-                event.window.inner_size().height,
+                event.wgpu_context.window_size().width,
+                event.wgpu_context.window_size().height,
             );
         }
         self.state = Some(event);

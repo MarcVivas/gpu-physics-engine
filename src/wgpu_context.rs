@@ -1,11 +1,12 @@
 use std::sync::Arc;
 use winit::window::Window;
+
 use crate::surface_manager::SurfaceManager;
 
 pub struct WgpuContext {
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
-    pub surface_manager: SurfaceManager,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    surface_manager: SurfaceManager,
 }
 
 impl WgpuContext {
@@ -61,5 +62,28 @@ impl WgpuContext {
     
     pub fn resize(&mut self, width: u32, height: u32) {
         self.surface_manager.resize(width, height, &self.device);
+    }
+    
+    pub fn get_window(&self) -> &Arc<Window> {
+        self.surface_manager.get_window()
+    }
+    
+    pub fn get_surface(&self) -> &wgpu::Surface<'static> {
+        self.surface_manager.get_surface()
+    }
+    pub fn is_surface_configured(&self) -> bool {
+        self.surface_manager.is_surface_configured()
+    }
+    
+    pub fn get_device(&self) -> &wgpu::Device {
+        &self.device
+    }
+    
+    pub fn get_queue(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+    
+    pub fn get_surface_config(&self) -> &wgpu::SurfaceConfiguration{
+        &self.surface_manager.get_config()
     }
 }
