@@ -130,24 +130,6 @@ impl State {
 
 
       
-        // 3. Create the Bind Group Layout (the "template")
-        let camera_bind_group_layout = wgpu_context.get_device().create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    // This binding number must match the shader e.g. `@binding(0)`
-                    binding: 0,
-                    // We only need the camera matrix in the vertex shader.
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }
-            ],
-            label: Some("Camera Bind Group Layout"),
-        });
 
      
 
@@ -155,7 +137,7 @@ impl State {
         let shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("shaders/renderShaders/shader.wgsl"));
         let render_pipeline_layout = wgpu_context.get_device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&camera_bind_group_layout],
+            bind_group_layouts: &[&camera.camera_bind_group_layout()],
             push_constant_ranges: &[],
         });
 

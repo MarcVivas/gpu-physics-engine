@@ -8,6 +8,7 @@ pub struct Camera {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    camera_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl Camera {
@@ -15,8 +16,7 @@ impl Camera {
         let window_size = wgpu_context.window_size();
         
         // 1. Create the Camera controller and the initial uniform data
-        let mut camera_uniform = CameraUniform::new();
-        //camera_uniform.update_view_proj(&self, window_size.width as f32, window_size.height as f32);
+        let camera_uniform = CameraUniform::new();
 
         // 2. Create the wgpu::Buffer
         let camera_buffer = wgpu_context.get_device().create_buffer_init(
@@ -66,6 +66,7 @@ impl Camera {
             camera_uniform,
             camera_buffer,
             camera_bind_group,
+            camera_bind_group_layout,
         }
     }
 
@@ -101,6 +102,12 @@ impl Camera {
     pub fn camera_buffer(&self) -> &wgpu::Buffer {
         &self.camera_buffer
     }
+    
+    pub fn camera_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
+        &self.camera_bind_group_layout
+        
+    }
+    
 }
 
 #[repr(C)]
