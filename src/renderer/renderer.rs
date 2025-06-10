@@ -1,8 +1,22 @@
 use glam::Vec3;
 use wgpu::util::DeviceExt;
 use crate::renderer::camera::{Camera};
-use crate::{INDICES, VERTICES};
 use crate::wgpu_context::WgpuContext;
+
+
+const VERTICES: &[crate::state::Vertex] = &[
+    crate::state::Vertex { position: [-5.0868241, 7.49240386, 0.0], color: [0.5, 0.0, 0.5] }, // A
+    crate::state::Vertex { position: [-0.49513406, 10.06958647, 0.0], color: [0.5, 0.0, 0.5] }, // B
+    crate::state::Vertex { position: [-2.21918549, -2.44939706, 0.0], color: [0.5, 0.0, 0.5] }, // C
+    crate::state::Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5] }, // D
+    crate::state::Vertex { position: [4.44147372, 3.2347359, 0.0], color: [0.5, 0.0, 0.5] }, // E
+];
+
+const INDICES: &[u16] = &[
+    0, 1, 4,
+    1, 2, 4,
+    2, 3, 4,
+];
 
 // Manages multiple render pipelines
 pub struct Renderer {
