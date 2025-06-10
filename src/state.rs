@@ -161,7 +161,6 @@ impl State {
 
         renderer.add_pipeline(render_pipeline);
         let render_timer = RenderTimer::new();
-
         let input_manager = InputManager::new();
 
         Ok(Self {

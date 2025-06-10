@@ -4,6 +4,7 @@ mod surface_manager;
 mod renderer;
 mod wgpu_context;
 mod state;
+mod game_data;
 
 use std::sync::Arc;
 use state::State;

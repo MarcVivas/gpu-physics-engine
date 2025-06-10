@@ -32,7 +32,8 @@ impl RenderTimer {
 impl Drop for RenderTimer {
     fn drop(&mut self) {
         println!("Average render time: {:?} ms", self.get_average_render_time());
+        println!("FPS: {}", self.frame_count as f64 / self.total_render_time.as_secs_f64());
         println!("Frame count: {}", self.frame_count);
         println!("Total render time: {:?} s", self.total_render_time.as_secs_f64());
-    }   
+    }
 }
