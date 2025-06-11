@@ -4,6 +4,7 @@ use wgpu::util::DeviceExt;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
+use crate::game_data::particle::particle_system::ParticleSystem;
 use crate::input_manager::InputManager;
 use crate::render_timer::RenderTimer;
 use crate::renderer::camera::Camera;
@@ -14,6 +15,7 @@ use crate::wgpu_context::WgpuContext;
 pub struct State {
     wgpu_context: WgpuContext,
     background_color: wgpu::Color,
+    particles: ParticleSystem,
     vertex_buffer: wgpu::Buffer,
     num_vertices: u32,
     index_buffer: wgpu::Buffer,
@@ -56,6 +58,7 @@ impl State {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let wgpu_context = WgpuContext::new(window).await?;
         let mut renderer = Renderer::new(&wgpu_context).unwrap();
+        let particles: ParticleSystem = ParticleSystem::new();
 
         let vertex_buffer = wgpu_context.get_device().create_buffer_init(&wgpu::util::BufferInitDescriptor{
             label: Some("Vertex buffer"),
@@ -172,7 +175,8 @@ impl State {
             num_indices,
             render_timer,
             input_manager,
-            renderer
+            renderer,
+            particles
 
         })
 

@@ -15,8 +15,8 @@ wgpu = "25.0.2"
 winit = { version = "0.30", features = ["android-native-activity"] }
 wasm-bindgen = "0.2.100"
 wasm-bindgen-futures = "0.4.50"
+glam = { version = "0.30.3", features = ["bytemuck"] }
 bytemuck = "1.23.0"
-glam = "0.30.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.6"

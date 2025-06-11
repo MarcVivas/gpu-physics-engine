@@ -2,7 +2,7 @@ use glam::Vec3;
 use wgpu::util::DeviceExt;
 use crate::renderer::camera::{Camera};
 use crate::wgpu_context::WgpuContext;
-
+use crate::game_data::particle::particle_system::ParticleSystem;
 
 const VERTICES: &[crate::state::Vertex] = &[
     crate::state::Vertex { position: [-5.0868241, 7.49240386, 0.0], color: [0.5, 0.0, 0.5] }, // A
@@ -11,6 +11,7 @@ const VERTICES: &[crate::state::Vertex] = &[
     crate::state::Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5] }, // D
     crate::state::Vertex { position: [4.44147372, 3.2347359, 0.0], color: [0.5, 0.0, 0.5] }, // E
 ];
+
 
 const INDICES: &[u16] = &[
     0, 1, 4,
@@ -25,21 +26,43 @@ pub struct Renderer {
     camera: Camera,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    particles: ParticleSystem,
+    vertex_buffer2: wgpu::Buffer,
+    index_buffer2: wgpu::Buffer,
     num_indices: u32,
 }
 
 impl Renderer {
     pub fn new(wgpu_context: &WgpuContext) -> Option<Self> {
+
+
         let vertex_buffer = wgpu_context.get_device().create_buffer_init(&wgpu::util::BufferInitDescriptor{
             label: Some("Vertex buffer"),
             contents: bytemuck::cast_slice(VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
+
         let index_buffer = wgpu_context.get_device().create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
                 contents: bytemuck::cast_slice(INDICES),
+                usage: wgpu::BufferUsages::INDEX,
+            }
+        );
+
+        let particles: ParticleSystem = ParticleSystem::new();
+
+        let vertex_buffer2 = wgpu_context.get_device().create_buffer_init(&wgpu::util::BufferInitDescriptor{
+            label: Some("Vertex buffer 2"),
+            contents: bytemuck::cast_slice(particles.vertices()),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let index_buffer2 = wgpu_context.get_device().create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(particles.indices()),
                 usage: wgpu::BufferUsages::INDEX,
             }
         );
@@ -84,19 +107,22 @@ impl Renderer {
         // 4. Create the camera with the calculated values
         let camera = Camera::new(center, zoom, &wgpu_context);
 
-        
+
         Some(Self {
             rendering_pipelines: Vec::new(),
-            background_color: wgpu::Color::BLACK,  
+            background_color: wgpu::Color::BLACK,
             camera,
             vertex_buffer,
             index_buffer,
-            num_indices,       
+            vertex_buffer2,
+            index_buffer2,
+            particles,
+            num_indices,
         })
     }
-    
+
     pub fn add_pipeline(&mut self, pipeline: wgpu::RenderPipeline){
-        self.rendering_pipelines.push(pipeline);   
+        self.rendering_pipelines.push(pipeline);
     }
 
     pub fn render(&self, wgpu_context: &WgpuContext) -> Result<(), wgpu::SurfaceError>{
@@ -116,7 +142,7 @@ impl Renderer {
         let mut encoder = wgpu_context.get_device().create_command_encoder(&wgpu::CommandEncoderDescriptor{
             label: Some("Render Encoder"),
         });
-        
+
         for pipeline in self.rendering_pipelines.iter(){
             // Use encoder to create a RenderPass
             {
@@ -149,7 +175,7 @@ impl Renderer {
 
         Ok(())
     }
-    
+
     pub fn update_camera(&mut self, wgpu_context: &WgpuContext){
         self.camera.build_view_projection_matrix(wgpu_context.window_size().width as f32, wgpu_context.window_size().height as f32);
         wgpu_context.get_queue().write_buffer(
