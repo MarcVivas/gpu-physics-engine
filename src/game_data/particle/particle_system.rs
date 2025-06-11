@@ -17,8 +17,8 @@ impl ParticleSystem {
                 glam::Vec2::new(-0.5, -0.5), // 3: Bottom-left
             ],
             indices: vec![
-                0, 1, 2,
-                0, 2, 3
+                0, 3, 2, // First triangle
+                2, 1, 0  // Second triangle
             ],
             radiuses: vec![4.0],
             color: vec![wgpu::Color{r: 0.4, g:0.4, b:0.5, a:1.0}],

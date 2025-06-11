@@ -4,20 +4,6 @@ use crate::renderer::camera::{Camera};
 use crate::wgpu_context::WgpuContext;
 use crate::game_data::particle::particle_system::ParticleSystem;
 
-const VERTICES: &[crate::state::Vertex] = &[
-    crate::state::Vertex { position: [-5.0868241, 7.49240386, 0.0], color: [0.5, 0.0, 0.5] }, // A
-    crate::state::Vertex { position: [-0.49513406, 10.06958647, 0.0], color: [0.5, 0.0, 0.5] }, // B
-    crate::state::Vertex { position: [-2.21918549, -2.44939706, 0.0], color: [0.5, 0.0, 0.5] }, // C
-    crate::state::Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5] }, // D
-    crate::state::Vertex { position: [4.44147372, 3.2347359, 0.0], color: [0.5, 0.0, 0.5] }, // E
-];
-
-
-const INDICES: &[u16] = &[
-    0, 1, 4,
-    1, 2, 4,
-    2, 3, 4,
-];
 
 // Manages multiple render pipelines
 pub struct Renderer {
@@ -27,39 +13,23 @@ pub struct Renderer {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     particles: ParticleSystem,
-    vertex_buffer2: wgpu::Buffer,
-    index_buffer2: wgpu::Buffer,
     num_indices: u32,
 }
+
+
 
 impl Renderer {
     pub fn new(wgpu_context: &WgpuContext) -> Option<Self> {
 
-
-        let vertex_buffer = wgpu_context.get_device().create_buffer_init(&wgpu::util::BufferInitDescriptor{
-            label: Some("Vertex buffer"),
-            contents: bytemuck::cast_slice(VERTICES),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-
-        let index_buffer = wgpu_context.get_device().create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsages::INDEX,
-            }
-        );
-
         let particles: ParticleSystem = ParticleSystem::new();
 
-        let vertex_buffer2 = wgpu_context.get_device().create_buffer_init(&wgpu::util::BufferInitDescriptor{
+        let vertex_buffer = wgpu_context.get_device().create_buffer_init(&wgpu::util::BufferInitDescriptor{
             label: Some("Vertex buffer 2"),
             contents: bytemuck::cast_slice(particles.vertices()),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        let index_buffer2 = wgpu_context.get_device().create_buffer_init(
+        let index_buffer = wgpu_context.get_device().create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
                 contents: bytemuck::cast_slice(particles.indices()),
@@ -67,18 +37,18 @@ impl Renderer {
             }
         );
 
-        let num_vertices = VERTICES.len() as u32;
-        let num_indices = INDICES.len() as u32;
+        let num_vertices = particles.vertices().len() as u32;
+        let num_indices = particles.indices().len() as u32;
 
         // 1. Calculate the bounding box of the vertices
-        let (min_x, max_x, min_y, max_y) = VERTICES.iter().fold(
+        let (min_x, max_x, min_y, max_y) = particles.vertices().iter().fold(
             (f32::MAX, f32::MIN, f32::MAX, f32::MIN),
             |(min_x, max_x, min_y, max_y), vertex| {
                 (
-                    min_x.min(vertex.position[0]),
-                    max_x.max(vertex.position[0]),
-                    min_y.min(vertex.position[1]),
-                    max_y.max(vertex.position[1]),
+                    min_x.min(vertex.x),
+                    max_x.max(vertex.x),
+                    min_y.min(vertex.y),
+                    max_y.max(vertex.y),
                 )
             },
         );
@@ -107,15 +77,65 @@ impl Renderer {
         // 4. Create the camera with the calculated values
         let camera = Camera::new(center, zoom, &wgpu_context);
 
+        let shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("../shaders/renderShaders/shader.wgsl"));
+        let render_pipeline_layout = wgpu_context.get_device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
+            label: Some("Render Pipeline Layout"),
+            bind_group_layouts: &[&camera.camera_bind_group_layout()],
+            push_constant_ranges: &[],
+        });
+
+        let render_pipeline = wgpu_context.get_device().create_render_pipeline(&wgpu::RenderPipelineDescriptor{
+            label: Some("Render pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                                array_stride: std::mem::size_of::<glam::Vec2>() as wgpu::BufferAddress, // Size of a Vec2
+                                step_mode: wgpu::VertexStepMode::Vertex,
+                                attributes: &wgpu::vertex_attr_array![0 => Float32x2], // Vec2 is two 32-bit floats
+                            }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState{
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState{
+                    format: wgpu_context.get_surface_config().format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default()
+            }),
+
+            primitive: wgpu::PrimitiveState{
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
 
         Some(Self {
-            rendering_pipelines: Vec::new(),
+            rendering_pipelines: vec![
+                render_pipeline
+            ],
             background_color: wgpu::Color::BLACK,
             camera,
             vertex_buffer,
             index_buffer,
-            vertex_buffer2,
-            index_buffer2,
             particles,
             num_indices,
         })
@@ -164,9 +184,9 @@ impl Renderer {
 
                 render_pass.set_pipeline(pipeline);
                 render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-                render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 render_pass.set_bind_group(0, self.camera.binding_group(), &[]);
-                render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+                render_pass.draw_indexed(0..self.particles.indices().len() as u32, 0, 0..1);
             }
         }
 
@@ -183,5 +203,9 @@ impl Renderer {
             0, // offset
             bytemuck::cast_slice(&[*self.camera.get_uniform()])
         );
+    }
+
+    pub fn background_color(&mut self) -> &mut wgpu::Color {
+        &mut self.background_color
     }
 }
