@@ -12,8 +12,9 @@ pub struct Renderer {
     camera: Camera,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    instance_buffer: wgpu::Buffer,
+    radiuses_buffer: wgpu::Buffer,
     particles: ParticleSystem,
-    num_indices: u32,
 }
 
 
@@ -37,11 +38,25 @@ impl Renderer {
             }
         );
 
-        let num_vertices = particles.vertices().len() as u32;
-        let num_indices = particles.indices().len() as u32;
+        let instance_buffer = wgpu_context.get_device().create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Instance Buffer"),
+                contents: bytemuck::cast_slice(particles.instances()),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
+
+        let radiuses_buffer = wgpu_context.get_device().create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Instance Buffer 2"),
+                contents: bytemuck::cast_slice(particles.radiuses()),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
+
 
         // 1. Calculate the bounding box of the vertices
-        let (min_x, max_x, min_y, max_y) = particles.vertices().iter().fold(
+        let (min_x, max_x, min_y, max_y) = particles.instances().iter().fold(
             (f32::MAX, f32::MIN, f32::MAX, f32::MIN),
             |(min_x, max_x, min_y, max_y), vertex| {
                 (
@@ -90,11 +105,24 @@ impl Renderer {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
+                buffers: &[
+                    wgpu::VertexBufferLayout {
                                 array_stride: std::mem::size_of::<glam::Vec2>() as wgpu::BufferAddress, // Size of a Vec2
                                 step_mode: wgpu::VertexStepMode::Vertex,
                                 attributes: &wgpu::vertex_attr_array![0 => Float32x2], // Vec2 is two 32-bit floats
-                            }],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<glam::Vec2>() as wgpu::BufferAddress, 
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &wgpu::vertex_attr_array![1 => Float32x2], 
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<f32>() as wgpu::BufferAddress, 
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &wgpu::vertex_attr_array![2 => Float32], 
+                    },
+                    
+                ],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState{
@@ -136,8 +164,9 @@ impl Renderer {
             camera,
             vertex_buffer,
             index_buffer,
+            instance_buffer,
+            radiuses_buffer,
             particles,
-            num_indices,
         })
     }
 
@@ -185,8 +214,11 @@ impl Renderer {
                 render_pass.set_pipeline(pipeline);
                 render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                 render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                render_pass.set_vertex_buffer(2, self.radiuses_buffer.slice(..));
+
                 render_pass.set_bind_group(0, self.camera.binding_group(), &[]);
-                render_pass.draw_indexed(0..self.particles.indices().len() as u32, 0, 0..1);
+                render_pass.draw_indexed(0..self.particles.indices().len() as u32, 0, 0..self.particles.instances().len() as u32);
             }
         }
 

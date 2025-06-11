@@ -7,7 +7,6 @@ use winit::window::Window;
 use crate::game_data::particle::particle_system::ParticleSystem;
 use crate::input_manager::InputManager;
 use crate::render_timer::RenderTimer;
-use crate::renderer::camera::Camera;
 use crate::renderer::renderer::Renderer;
 use crate::wgpu_context::WgpuContext;
 

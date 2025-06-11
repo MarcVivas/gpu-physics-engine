@@ -3,6 +3,13 @@ struct VertexInput {
     @location(0) position: vec2<f32>,
 };
 
+struct InstanceInput {
+    @location(1) position: vec2<f32>,
+}
+
+struct RadiusInput {
+    @location(2) radius: f32,
+}
 struct Camera {
     view_proj: mat4x4<f32>,
 };
@@ -17,11 +24,15 @@ struct VertexOutput {
 };
 
 @vertex
-fn vs_main(model: VertexInput) -> VertexOutput {
+fn vs_main(model: VertexInput, instance: InstanceInput, radius: RadiusInput) -> VertexOutput {
     var out: VertexOutput;
     out.color = vec3<f32>(0.4, 0.3, 0.1);
     out.local_pos = model.position;
-    out.clip_position = u_camera.view_proj * vec4<f32>(model.position, 0.0, 1.0);
+
+    let scaled_position = model.position * radius.radius;
+    let world_position = scaled_position + instance.position;
+
+    out.clip_position = u_camera.view_proj * vec4<f32>(world_position, 0.0, 1.0);
     return out;
 }
 
