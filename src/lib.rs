@@ -5,6 +5,7 @@ mod renderer;
 mod wgpu_context;
 mod state;
 mod game_data;
+mod utils;
 
 use std::sync::Arc;
 use state::State;
@@ -62,7 +63,7 @@ impl ApplicationHandler<State> for App {
         }
 
         let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
-        
+
         #[cfg(not(target_arch = "wasm32"))]
         {
             self.state = Some(pollster::block_on(State::new(window)).unwrap());
@@ -99,15 +100,15 @@ impl ApplicationHandler<State> for App {
         }
         self.state = Some(event);
     }
-    
+
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: winit::window::WindowId, event: WindowEvent) {
         let state = match &mut self.state {
             Some(canvas) => canvas,
             None => return,
         };
-        
+
         state.render_loop(&event, &event_loop);
-        
+
     }
 }
 
@@ -121,15 +122,15 @@ pub fn run() -> anyhow::Result<()>{
     {
         console_log::init_with_level(log::Level::Info).unwrap_throw();
     }
-    
+
     let event_loop = EventLoop::with_user_event().build()?;
     let mut app = App::new(
         #[cfg(target_arch = "wasm32")]
         &event_loop,
     );
-    
+
     event_loop.run_app(&mut app)?;
-    
+
     Ok(())
 }
 

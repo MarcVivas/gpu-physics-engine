@@ -1,6 +1,4 @@
 use std::sync::Arc;
-use glam::Vec3;
-use wgpu::util::DeviceExt;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
@@ -12,6 +10,7 @@ use crate::wgpu_context::WgpuContext;
 
 // This will store the state of our game
 pub struct State {
+    world_size: glam::Vec2,
     wgpu_context: WgpuContext,
     particles: ParticleSystem,
     render_timer: RenderTimer,
@@ -21,16 +20,18 @@ pub struct State {
 
 impl State {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
+        let world_size = glam::Vec2::new(1920.0, 1080.0);
         let wgpu_context = WgpuContext::new(window).await?;
-        let renderer = Renderer::new(&wgpu_context).unwrap();
+        let renderer = Renderer::new(&wgpu_context, &world_size).unwrap();
 
-        let particles: ParticleSystem = ParticleSystem::new();
+        let particles: ParticleSystem = ParticleSystem::new(&wgpu_context, renderer.camera());
 
         //renderer.add_pipeline(render_pipeline);
         let render_timer = RenderTimer::new();
         let input_manager = InputManager::new();
 
         Ok(Self {
+            world_size,
             wgpu_context,
             render_timer,
             input_manager,
