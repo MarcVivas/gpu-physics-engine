@@ -21,8 +21,8 @@
             let max_y = world_size.y;
 
             let position = Vec3::new(
-                (min_x + max_x) / 4.0,
-                (min_y + max_y) / 4.0,
+                (min_x + max_x) / 2.0,
+                (min_y + max_y) / 2.0,
                 0.0
             );
 
@@ -96,15 +96,23 @@
         }
 
         pub fn build_view_projection_matrix(&mut self, screen_width: f32, screen_height: f32) -> Mat4 {
-            let view = Mat4::from_translation(self.position);
+            // Update screen size in controller for zoom-to-cursor calculations
+            self.camera_controller.screen_size = glam::Vec2::new(screen_width, screen_height);
+            
+            // Create view matrix - invert camera position to move the world opposite to camera
+            let view = Mat4::from_translation(-self.position);
 
+            // Create symmetric orthographic projection centered around origin
+            let half_width = screen_width / (2.0 * self.zoom);
+            let half_height = screen_height / (2.0 * self.zoom);
+            
             let projection = Mat4::orthographic_rh(
-                screen_width / 2.0 / self.zoom,    // left
-                screen_width / self.zoom,     // right
-                screen_height / 2.0 / self.zoom,   // bottom
-                screen_height / self.zoom,    // top
+                -half_width,  // left
+                half_width,   // right
+                -half_height, // bottom
+                half_height,  // top
                 -1.0, // near
-                1.0, // far
+                1.0,  // far
             );
 
             let view_proj = projection * view;
@@ -112,8 +120,57 @@
             view_proj
         }
 
-        pub fn process_events(&mut self, event: &winit::event::WindowEvent) {
-            self.camera_controller.process_events(event);
+        pub fn process_events(&mut self, event: &winit::event::WindowEvent) -> bool {
+            self.camera_controller.process_events(event)
+        }
+
+        pub fn update(&mut self, dt: f32) {
+            let move_speed = self.camera_controller.speed * dt / self.zoom;
+
+            if self.camera_controller.is_up_pressed { self.position.y += move_speed; }
+            if self.camera_controller.is_down_pressed { self.position.y -= move_speed; }
+            if self.camera_controller.is_right_pressed { self.position.x += move_speed; }
+            if self.camera_controller.is_left_pressed { self.position.x -= move_speed; }
+
+            if self.camera_controller.scroll_delta != 0.0 {
+                // Zoom-to-cursor implementation
+                let old_zoom = self.zoom;
+                
+                // Convert mouse screen coordinates to world coordinates before zoom
+                let world_pos_before = self.screen_to_world(self.camera_controller.mouse_position);
+                
+                // Apply zoom
+                let zoom_factor = 1.0 + (self.camera_controller.scroll_delta * self.camera_controller.zoom_sensitivity);
+                self.zoom *= zoom_factor;
+                self.zoom = self.zoom.clamp(0.01, 100.0);
+                
+                // Convert the same mouse screen coordinates to world coordinates after zoom
+                let world_pos_after = self.screen_to_world(self.camera_controller.mouse_position);
+                
+                // Adjust camera position to keep the world point under the cursor
+                let world_delta = world_pos_before - world_pos_after;
+                self.position += glam::Vec3::new(world_delta.x, world_delta.y, 0.0);
+                
+                // Reset scroll delta after applying it
+                self.camera_controller.scroll_delta = 0.0;
+            }
+        }
+        
+        fn screen_to_world(&self, screen_pos: glam::Vec2) -> glam::Vec2 {
+            let screen_size = self.camera_controller.screen_size;
+            
+            // Convert screen coordinates to normalized device coordinates (-1 to 1)
+            let ndc_x = (screen_pos.x / screen_size.x) * 2.0 - 1.0;
+            let ndc_y = 1.0 - (screen_pos.y / screen_size.y) * 2.0; // Flip Y axis
+            
+            // Convert NDC to world coordinates
+            let half_width = screen_size.x / (2.0 * self.zoom);
+            let half_height = screen_size.y / (2.0 * self.zoom);
+            
+            let world_x = self.position.x + ndc_x * half_width;
+            let world_y = self.position.y + ndc_y * half_height;
+            
+            glam::Vec2::new(world_x, world_y)
         }
 
         pub fn binding_group(&self) -> &wgpu::BindGroup {
@@ -156,7 +213,8 @@
         }
     }
 
-    use winit::event::{WindowEvent};
+    use winit::event::{WindowEvent, KeyEvent, MouseScrollDelta};
+    use winit::keyboard::{KeyCode, PhysicalKey};
     use crate::wgpu_context::WgpuContext;
 
     #[derive(Debug)]
@@ -168,6 +226,8 @@
         speed: f32,
         zoom_sensitivity: f32,
         scroll_delta: f32, // New field to store scroll amount
+        mouse_position: glam::Vec2, // Track mouse position for zoom-to-cursor
+        screen_size: glam::Vec2, // Track screen size for coordinate conversion
     }
 
     impl CameraController {
@@ -180,28 +240,49 @@
                 speed,
                 zoom_sensitivity,
                 scroll_delta: 0.0,
+                mouse_position: glam::Vec2::ZERO,
+                screen_size: glam::Vec2::new(800.0, 600.0), // Default size
             }
         }
 
         fn process_events(&mut self, event: &WindowEvent) -> bool {
-            return true;
-        }
-
-        fn update_camera(&mut self, camera: &mut super::camera::Camera) {
-            let move_speed = self.speed / camera.zoom;
-
-            if self.is_up_pressed { camera.position.y += move_speed; }
-            if self.is_down_pressed { camera.position.y -= move_speed; }
-            if self.is_right_pressed { camera.position.x += move_speed; }
-            if self.is_left_pressed { camera.position.x -= move_speed; }
-
-            if self.scroll_delta != 0.0 {
-                let zoom_factor = 1.0 - (self.scroll_delta * self.zoom_sensitivity);
-                camera.zoom *= zoom_factor;
-                camera.zoom = camera.zoom.max(0.01);
+            match event {
+                WindowEvent::KeyboardInput { event: KeyEvent { physical_key, state, .. }, .. } => {
+                    let is_pressed = *state == winit::event::ElementState::Pressed;
+                    match physical_key {
+                        PhysicalKey::Code(KeyCode::KeyW) | PhysicalKey::Code(KeyCode::ArrowUp) => {
+                            self.is_up_pressed = is_pressed;
+                            true
+                        }
+                        PhysicalKey::Code(KeyCode::KeyS) | PhysicalKey::Code(KeyCode::ArrowDown) => {
+                            self.is_down_pressed = is_pressed;
+                            true
+                        }
+                        PhysicalKey::Code(KeyCode::KeyA) | PhysicalKey::Code(KeyCode::ArrowLeft) => {
+                            self.is_left_pressed = is_pressed;
+                            true
+                        }
+                        PhysicalKey::Code(KeyCode::KeyD) | PhysicalKey::Code(KeyCode::ArrowRight) => {
+                            self.is_right_pressed = is_pressed;
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                WindowEvent::MouseWheel { delta, .. } => {
+                    self.scroll_delta += match delta {
+                        MouseScrollDelta::LineDelta(_, y) => *y,
+                        MouseScrollDelta::PixelDelta(pos) => pos.y as f32 * 0.01,
+                    };
+                    true
+                }
+                WindowEvent::CursorMoved { position, .. } => {
+                    self.mouse_position = glam::Vec2::new(position.x as f32, position.y as f32);
+                    false // Don't consume this event
+                }
+                _ => false,
             }
-
-            // Reset scroll delta after applying it
-            self.scroll_delta = 0.0;
         }
+
+
     }

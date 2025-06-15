@@ -59,15 +59,20 @@ impl State {
                     }
                 }
             }
-            _ => {self.input_manager.manage_input(event, event_loop, self.renderer.background_color());}
+            _ => {
+                // Handle global input through InputManager (no renderer needed)
+                self.input_manager.manage_input(event, event_loop);
+                // Handle renderer input directly (camera controls)
+                self.renderer.process_events(event);
+            }
         }
 
     }
 
     fn update(&mut self){
-        self.render_timer.get_delta();
-        // Recalculate the matrix
-        self.renderer.update_camera(&self.wgpu_context);
+        let dt = self.render_timer.get_delta().as_secs_f32();
+        // Update renderer with delta time (includes camera update)
+        self.renderer.update(dt, &self.wgpu_context);
     }
 
     fn render(&mut self)  -> Result<(), wgpu::SurfaceError>{

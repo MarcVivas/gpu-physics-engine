@@ -119,56 +119,15 @@ impl ParticleSystem {
         }
     }
 
-    pub fn draw(&self, wgpu_context: &WgpuContext, camera: &Camera, background_color: wgpu::Color) -> Result<(), wgpu::SurfaceError>{
-        wgpu_context.get_window().request_redraw();
+    pub fn draw(&self, render_pass: &mut wgpu::RenderPass, camera: &Camera){
+        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_vertex_buffer(0, self.vertices.buffer().slice(..));
+        render_pass.set_index_buffer(self.indices.buffer().slice(..), wgpu::IndexFormat::Uint32);
+        render_pass.set_vertex_buffer(1, self.instances.buffer().slice(..));
+        render_pass.set_vertex_buffer(2, self.radiuses.buffer().slice(..));
 
-        // We can't render unless the window is configured
-        if !wgpu_context.is_surface_configured() {
-            return Ok(());
-        }
-
-        // This is where we render
-        let output = wgpu_context.get_surface().get_current_texture()?;
-
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        // We need an encoder to create the actual commands to send to the gpu
-        let mut encoder = wgpu_context.get_device().create_command_encoder(&wgpu::CommandEncoderDescriptor{
-            label: Some("Render Encoder"),
-        });
-
-            // Use encoder to create a RenderPass
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor{
-                label: Some("Render Pass"),
-                color_attachments: &[
-                    Some(wgpu::RenderPassColorAttachment{
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(background_color),
-                            store: wgpu::StoreOp::Store,
-                        }
-                    })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
-
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_vertex_buffer(0, self.vertices.buffer().slice(..));
-            render_pass.set_index_buffer(self.indices.buffer().slice(..), wgpu::IndexFormat::Uint32);
-            render_pass.set_vertex_buffer(1, self.instances.buffer().slice(..));
-            render_pass.set_vertex_buffer(2, self.radiuses.buffer().slice(..));
-
-            render_pass.set_bind_group(0, camera.binding_group(), &[]);
-            render_pass.draw_indexed(0..self.indices().len() as u32, 0, 0..self.instances().len() as u32);
-        }
-
-
-        wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
-        output.present();
-        Ok(())
+        render_pass.set_bind_group(0, camera.binding_group(), &[]);
+        render_pass.draw_indexed(0..self.indices().len() as u32, 0, 0..self.instances().len() as u32);
     }
 
     pub fn vertices(&self) -> &[glam::Vec2] {

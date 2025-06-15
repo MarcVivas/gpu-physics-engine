@@ -12,13 +12,10 @@ impl InputManager {
         InputManager {}
     }
 
-    pub fn manage_input(&self, event: &WindowEvent, event_loop: &ActiveEventLoop, color: &mut wgpu::Color) {
+    pub fn manage_input(&self, event: &WindowEvent, event_loop: &ActiveEventLoop) {
         match event {
             WindowEvent::CloseRequested => {event_loop.exit();}
-            WindowEvent::CursorMoved { position, .. } => {
-                //let size = state.window.inner_size();
 
-            },
             WindowEvent::KeyboardInput {
                 event:
                 KeyEvent {
@@ -27,8 +24,13 @@ impl InputManager {
                     ..
                 },
                 ..
-            } => self.handle_key(event_loop, code, key_state.is_pressed()),
-            WindowEvent::MouseWheel { delta, .. } => {}
+            } => {
+                // Handle global input only
+                self.handle_key(event_loop, code, key_state.is_pressed());
+            },
+            WindowEvent::MouseWheel { delta, .. } => {
+                // Mouse wheel is handled directly by renderer in State
+            }
             _ => {}
         }
     }
