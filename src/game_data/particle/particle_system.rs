@@ -1,6 +1,6 @@
 use glam::Vec2;
 use rand::Rng;
-use crate::{renderer::camera::Camera, utils::gpu_buffer::GpuBuffer, wgpu_context::WgpuContext};
+use crate::{renderer::{camera::Camera, renderable::Renderable}, utils::gpu_buffer::GpuBuffer, wgpu_context::WgpuContext};
 
 pub struct ParticleSystem {
     vertices: GpuBuffer<glam::Vec2>,
@@ -17,7 +17,7 @@ impl ParticleSystem {
         const WORLD_WIDTH: f32 = 1920.0;
         const WORLD_HEIGHT: f32 = 1080.0;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let mut instances = Vec::with_capacity(NUM_PARTICLES);
         let mut radiuses = Vec::with_capacity(NUM_PARTICLES);
@@ -30,7 +30,7 @@ impl ParticleSystem {
             let radius = rng.random_range(1.0..4.0);
             radiuses.push(radius);
         }
-        let shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("../../shaders/renderShaders/shader.wgsl"));
+        let shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
         let render_pipeline_layout = wgpu_context.get_device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
             label: Some("Render Pipeline Layout"),
             bind_group_layouts: &[&camera.camera_bind_group_layout()],
@@ -119,17 +119,6 @@ impl ParticleSystem {
         }
     }
 
-    pub fn draw(&self, render_pass: &mut wgpu::RenderPass, camera: &Camera){
-        render_pass.set_pipeline(&self.render_pipeline);
-        render_pass.set_vertex_buffer(0, self.vertices.buffer().slice(..));
-        render_pass.set_index_buffer(self.indices.buffer().slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.set_vertex_buffer(1, self.instances.buffer().slice(..));
-        render_pass.set_vertex_buffer(2, self.radiuses.buffer().slice(..));
-
-        render_pass.set_bind_group(0, camera.binding_group(), &[]);
-        render_pass.draw_indexed(0..self.indices().len() as u32, 0, 0..self.instances().len() as u32);
-    }
-
     pub fn vertices(&self) -> &[glam::Vec2] {
         self.vertices.data()
     }
@@ -148,5 +137,18 @@ impl ParticleSystem {
 
     pub fn color(&self) -> &[glam::Vec4] {
         self.colors.data()
+    }
+}
+
+impl Renderable for ParticleSystem {
+    fn draw(&self, render_pass: &mut wgpu::RenderPass, camera: &Camera){
+        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_vertex_buffer(0, self.vertices.buffer().slice(..));
+        render_pass.set_index_buffer(self.indices.buffer().slice(..), wgpu::IndexFormat::Uint32);
+        render_pass.set_vertex_buffer(1, self.instances.buffer().slice(..));
+        render_pass.set_vertex_buffer(2, self.radiuses.buffer().slice(..));
+
+        render_pass.set_bind_group(0, camera.binding_group(), &[]);
+        render_pass.draw_indexed(0..self.indices().len() as u32, 0, 0..self.instances().len() as u32);
     }
 }

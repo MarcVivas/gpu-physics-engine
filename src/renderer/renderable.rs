@@ -1,7 +1,5 @@
-use wgpu::Buffer;
+use crate::renderer::camera::Camera;
 
 pub trait Renderable {
-    fn vertex_buffer(&self) -> &Buffer;
-    fn num_vertices(&self) -> u32;
-
+    fn draw(&self, render_pass: &mut wgpu::RenderPass, camera: &Camera);
 }

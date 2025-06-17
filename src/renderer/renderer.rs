@@ -1,9 +1,9 @@
-use glam::Vec3;
-use wgpu::util::DeviceExt;
+
 use crate::renderer::camera::{Camera};
+use crate::renderer::renderable::Renderable;
 use crate::wgpu_context::WgpuContext;
 use crate::game_data::particle::particle_system::ParticleSystem;
-
+use crate::game_data::line::lines::Lines;
 
 // Manages multiple render pipelines
 pub struct Renderer {
@@ -11,6 +11,7 @@ pub struct Renderer {
     background_color: wgpu::Color,
     camera: Camera,
     particles: ParticleSystem,
+    lines: Lines
 }
 
 
@@ -20,7 +21,7 @@ impl Renderer {
         // 4. Create the camera with the calculated values
         let camera = Camera::new(world_size, &wgpu_context);
         let particles: ParticleSystem = ParticleSystem::new(&wgpu_context, &camera);
-
+        let lines = Lines::new(wgpu_context, &camera);
 
         Some(Self {
             rendering_pipelines: vec![
@@ -29,6 +30,7 @@ impl Renderer {
             background_color: wgpu::Color::BLACK,
             camera,
             particles,
+            lines
         })
     }
 
@@ -74,6 +76,7 @@ impl Renderer {
 
             // Draw particle system
             self.particles.draw(&mut render_pass, &self.camera);
+            self.lines.draw(&mut render_pass, &self.camera);
         }
 
         wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
@@ -92,14 +95,14 @@ impl Renderer {
     pub fn update(&mut self, dt: f32, wgpu_context: &WgpuContext) {
         // Update camera based on input and delta time
         self.camera.update(dt);
-        
+
         // Update camera matrices and upload to GPU
         self.update_camera_matrices(wgpu_context);
     }
 
     pub fn update_camera_matrices(&mut self, wgpu_context: &WgpuContext) {
         self.camera.build_view_projection_matrix(
-            wgpu_context.window_size().width as f32, 
+            wgpu_context.window_size().width as f32,
             wgpu_context.window_size().height as f32
         );
         wgpu_context.get_queue().write_buffer(

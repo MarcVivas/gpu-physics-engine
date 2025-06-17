@@ -6,7 +6,6 @@ mod wgpu_context;
 mod state;
 mod game_data;
 mod utils;
-
 use std::sync::Arc;
 use state::State;
 
