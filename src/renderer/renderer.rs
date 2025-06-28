@@ -1,4 +1,6 @@
-
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use crate::renderer::camera::{Camera};
 use crate::renderer::renderable::Renderable;
 use crate::wgpu_context::WgpuContext;
@@ -7,11 +9,9 @@ use crate::game_data::line::lines::Lines;
 
 // Manages multiple render pipelines
 pub struct Renderer {
-    rendering_pipelines: Vec<wgpu::RenderPipeline>,
+    renderables: Vec<Rc<RefCell<dyn Renderable>>>,
     background_color: wgpu::Color,
     camera: Camera,
-    particles: ParticleSystem,
-    lines: Lines
 }
 
 
@@ -20,22 +20,18 @@ impl Renderer {
     pub fn new(wgpu_context: &WgpuContext, world_size: &glam::Vec2) -> Option<Self> {
         // 4. Create the camera with the calculated values
         let camera = Camera::new(world_size, &wgpu_context);
-        let particles: ParticleSystem = ParticleSystem::new(&wgpu_context, &camera);
-        let lines = Lines::new(wgpu_context, &camera);
 
         Some(Self {
-            rendering_pipelines: vec![
+            renderables: vec![
 
             ],
             background_color: wgpu::Color::BLACK,
             camera,
-            particles,
-            lines
         })
     }
 
-    pub fn add_pipeline(&mut self, pipeline: wgpu::RenderPipeline){
-        self.rendering_pipelines.push(pipeline);
+    pub fn add_renderable(&mut self, renderable: Rc<RefCell<dyn Renderable>>) {
+        self.renderables.push(renderable);
     }
 
     pub fn render(&self, wgpu_context: &WgpuContext) -> Result<(), wgpu::SurfaceError>{
@@ -74,9 +70,10 @@ impl Renderer {
                 timestamp_writes: None,
             });
 
-            // Draw particle system
-            self.particles.draw(&mut render_pass, &self.camera);
-            self.lines.draw(&mut render_pass, &self.camera);
+            // Draw all renderables
+            for renderable in &self.renderables {
+                renderable.borrow().draw(&mut render_pass, &self.camera);
+            }
         }
 
         wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
@@ -92,10 +89,12 @@ impl Renderer {
         self.camera.process_events(event)
     }
 
-    pub fn update(&mut self, dt: f32, wgpu_context: &WgpuContext) {
+    pub fn update(&mut self, dt: f32, wgpu_context: &WgpuContext, world_size: &glam::Vec2) {
         // Update camera based on input and delta time
         self.camera.update(dt);
-
+        for renderable in &mut self.renderables {
+            renderable.borrow().update(dt, world_size, wgpu_context);
+        }
         // Update camera matrices and upload to GPU
         self.update_camera_matrices(wgpu_context);
     }

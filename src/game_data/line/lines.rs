@@ -1,3 +1,4 @@
+use glam::Vec2;
 use crate::renderer::renderable::Renderable;
 use crate::renderer::camera::Camera;
 use crate::utils::gpu_buffer::GpuBuffer;
@@ -141,5 +142,9 @@ impl Renderable for Lines {
         render_pass.set_vertex_buffer(2, self.thicknesses.buffer().slice(..));
         render_pass.set_bind_group(0, camera.binding_group(), &[]);
         render_pass.draw(0..self.vertices.data().len() as u32, 0..1);
+    }
+
+    fn update(&self, delta_time: f32, world_size: &Vec2, wgpu_context: &WgpuContext) {
+        
     }
 }

@@ -156,7 +156,7 @@
             }
         }
         
-        fn screen_to_world(&self, screen_pos: glam::Vec2) -> glam::Vec2 {
+        pub fn screen_to_world(&self, screen_pos: glam::Vec2) -> glam::Vec2 {
             let screen_size = self.camera_controller.screen_size;
             
             // Convert screen coordinates to normalized device coordinates (-1 to 1)
