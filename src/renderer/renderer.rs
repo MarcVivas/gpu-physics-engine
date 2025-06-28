@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use crate::renderer::camera::{Camera};
 use crate::renderer::renderable::Renderable;
-use crate::wgpu_context::WgpuContext;
+use crate::renderer::wgpu_context::WgpuContext;
 use crate::game_data::particle::particle_system::ParticleSystem;
 use crate::game_data::line::lines::Lines;
 

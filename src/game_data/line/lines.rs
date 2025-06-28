@@ -2,7 +2,7 @@ use glam::Vec2;
 use crate::renderer::renderable::Renderable;
 use crate::renderer::camera::Camera;
 use crate::utils::gpu_buffer::GpuBuffer;
-use crate::wgpu_context::WgpuContext;
+use crate::renderer::wgpu_context::WgpuContext;
 use rand::Rng;
 
 pub struct Lines {

@@ -1,6 +1,7 @@
 use glam::Vec2;
 use rand::Rng;
-use crate::{renderer::{camera::Camera, renderable::Renderable}, utils::gpu_buffer::GpuBuffer, wgpu_context::WgpuContext};
+use crate::{renderer::{camera::Camera, renderable::Renderable}, utils::gpu_buffer::GpuBuffer};
+use crate::renderer::wgpu_context::WgpuContext;
 
 pub struct ParticleSystem {
     vertices: GpuBuffer<glam::Vec2>,

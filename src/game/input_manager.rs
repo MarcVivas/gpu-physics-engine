@@ -1,7 +1,7 @@
 use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
-use crate::State;
+use crate::game::state::State;
 
 pub struct InputManager {
 

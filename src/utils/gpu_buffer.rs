@@ -1,5 +1,5 @@
 use std::mem;
-use crate::wgpu_context::{WgpuContext};
+use crate::renderer::wgpu_context::{WgpuContext};
 use wgpu::{util::DeviceExt, Buffer, Queue};
 
 #[derive(Debug)]

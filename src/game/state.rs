@@ -9,11 +9,10 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
 use crate::game_data::line::lines::Lines;
 use crate::game_data::particle::particle_system::ParticleSystem;
-use crate::input_manager::InputManager;
-use crate::render_timer::RenderTimer;
-use crate::renderer::renderable::Renderable;
+use crate::game::input_manager::InputManager;
+use crate::renderer::render_timer::RenderTimer;
 use crate::renderer::renderer::Renderer;
-use crate::wgpu_context::WgpuContext;
+use crate::renderer::wgpu_context::WgpuContext;
 
 // This will store the state of our game
 pub struct State {

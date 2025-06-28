@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use winit::window::Window;
 
-use crate::surface_manager::SurfaceManager;
+use crate::renderer::surface_manager::SurfaceManager;
 
 pub struct WgpuContext {
     device: wgpu::Device,

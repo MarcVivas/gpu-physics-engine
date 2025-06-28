@@ -1,5 +1,5 @@
 use crate::renderer::camera::Camera;
-use crate::wgpu_context::WgpuContext;
+use crate::renderer::wgpu_context::WgpuContext;
 
 pub trait Renderable {
     fn draw(&self, render_pass: &mut wgpu::RenderPass, camera: &Camera);

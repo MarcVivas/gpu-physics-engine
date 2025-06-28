@@ -215,7 +215,7 @@
 
     use winit::event::{WindowEvent, KeyEvent, MouseScrollDelta};
     use winit::keyboard::{KeyCode, PhysicalKey};
-    use crate::wgpu_context::WgpuContext;
+    use crate::renderer::wgpu_context::WgpuContext;
 
     #[derive(Debug)]
     pub struct CameraController {
