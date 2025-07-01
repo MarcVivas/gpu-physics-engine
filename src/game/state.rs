@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use glam::Vec2;
 use winit::dpi;
 use winit::event::{KeyEvent, WindowEvent};
@@ -13,7 +13,7 @@ use crate::game::input_manager::InputManager;
 use crate::renderer::render_timer::RenderTimer;
 use crate::renderer::renderer::Renderer;
 use crate::renderer::wgpu_context::WgpuContext;
-
+use crate::game::grid::Grid;
 // This will store the state of our game
 pub struct State {
     world_size: glam::Vec2,
@@ -22,7 +22,7 @@ pub struct State {
     input_manager: InputManager,
     renderer: Renderer,
     particles: Rc<RefCell<ParticleSystem>>,
-    lines: Rc<RefCell<Lines>>,
+    grid: Rc<RefCell<Grid>>,
     mouse_position: Option<dpi::PhysicalPosition<f64>>,
 }
 
@@ -33,11 +33,11 @@ impl State {
         let mut renderer = Renderer::new(&wgpu_context, &world_size).unwrap();
 
         let particles = Rc::new(RefCell::new(ParticleSystem::new(&wgpu_context, renderer.camera())));
-        let lines = Rc::new(RefCell::new(Lines::new(&wgpu_context, renderer.camera())));
+        let grid =  Rc::new(RefCell::new(Grid::new(&wgpu_context, renderer.camera(), world_size, particles.borrow().get_max_radius())));
         
         renderer.add_renderable(particles.clone());
-        renderer.add_renderable(lines.clone());
-        
+        renderer.add_renderable(grid.clone());
+
         let render_timer = RenderTimer::new();
         let input_manager = InputManager::new();
         
@@ -49,9 +49,9 @@ impl State {
             render_timer,
             input_manager,
             particles,
-            lines,
             renderer,
             mouse_position,
+            grid,
         })
 
     }

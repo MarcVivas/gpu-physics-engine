@@ -1,4 +1,4 @@
-use glam::Vec2;
+use glam::{Vec2, Vec4};
 use crate::renderer::renderable::Renderable;
 use crate::renderer::camera::Camera;
 use crate::utils::gpu_buffer::GpuBuffer;
@@ -19,35 +19,7 @@ impl Lines {
         let mut colors = Vec::new();
         let mut thicknesses = Vec::new();
 
-        let mut rng = rand::rng();
-
-        // Initialize lines in the for loop
-        for i in 0..TOTAL_LINES {
-            // Create line endpoints
-            let start_x = 100.0 + (i as f32 * 150.0);
-            let start_y = 100.0;
-            let end_x = start_x + 100.0;
-            let end_y = 300.0;
-
-            // Add both endpoints for this line
-            vertices.push(glam::Vec2::new(start_x, start_y));
-            vertices.push(glam::Vec2::new(end_x, end_y));
-
-            // Random color for this line (same color for both endpoints)
-            let line_color = glam::Vec4::new(
-                rng.random_range(0.0..1.0), // Red
-                rng.random_range(0.0..1.0), // Green
-                rng.random_range(0.0..1.0), // Blue
-                1.0                         // Alpha
-            );
-            colors.push(line_color);
-            colors.push(line_color); // Same color for both endpoints
-
-            // Random thickness for this line (same thickness for both endpoints)
-            let line_thickness = rng.random_range(1.0..5.0);
-            thicknesses.push(line_thickness);
-            thicknesses.push(line_thickness); // Same thickness for both endpoints
-        }
+        
 
         let shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("line.wgsl"));
         let render_pipeline_layout = wgpu_context.get_device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
@@ -65,19 +37,19 @@ impl Lines {
                 buffers: &[
                     // Buffer 0: Vertex positions
                     wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<glam::Vec2>() as wgpu::BufferAddress,
+                        array_stride: size_of::<Vec2>() as wgpu::BufferAddress,
                         step_mode: wgpu::VertexStepMode::Vertex,
                         attributes: &wgpu::vertex_attr_array![0 => Float32x2],
                     },
                     // Buffer 1: Colors
                     wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<glam::Vec4>() as wgpu::BufferAddress,
+                        array_stride: size_of::<Vec4>() as wgpu::BufferAddress,
                         step_mode: wgpu::VertexStepMode::Vertex,
                         attributes: &wgpu::vertex_attr_array![1 => Float32x4],
                     },
                     // Buffer 2: Thickness
                     wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<f32>() as wgpu::BufferAddress,
+                        array_stride: size_of::<f32>() as wgpu::BufferAddress,
                         step_mode: wgpu::VertexStepMode::Vertex,
                         attributes: &wgpu::vertex_attr_array![2 => Float32],
                     },
@@ -132,10 +104,22 @@ impl Lines {
             render_pipeline,
         }
     }
+    
+    pub fn push(&mut self, wgpu_context: &WgpuContext, start: Vec2, end: Vec2, color: Vec4, thickness: f32) {
+        self.colors.push(color, wgpu_context);        
+        self.colors.push(color, wgpu_context);
+
+        self.thicknesses.push(thickness, wgpu_context);
+        self.thicknesses.push(thickness, wgpu_context);
+
+        self.vertices.push(start, wgpu_context);
+        self.vertices.push(end, wgpu_context);
+    }
 }
 
 impl Renderable for Lines {
     fn draw(&self, render_pass: &mut wgpu::RenderPass, camera: &Camera) {
+        if self.vertices.data().len() == 0 {return;}
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(0, self.vertices.buffer().slice(..));
         render_pass.set_vertex_buffer(1, self.colors.buffer().slice(..));

@@ -9,6 +9,7 @@ pub struct ParticleSystem {
     instances: GpuBuffer<glam::Vec2>,
     velocities: GpuBuffer<glam::Vec2>,
     radiuses: GpuBuffer<f32>,
+    max_radius: f32,
     colors: GpuBuffer<glam::Vec4>,
     render_pipeline: wgpu::RenderPipeline,
     compute_pipeline: wgpu::ComputePipeline,
@@ -38,6 +39,9 @@ impl ParticleSystem {
         let mut radiuses = Vec::with_capacity(NUM_PARTICLES);
         let mut vels = Vec::with_capacity(NUM_PARTICLES);
 
+        
+        let mut max_radius = f32::MIN;
+        
         for _ in 0..NUM_PARTICLES {
             let x = rng.random_range(0.0..WORLD_WIDTH);
             let y = rng.random_range(0.0..WORLD_HEIGHT);
@@ -46,8 +50,13 @@ impl ParticleSystem {
             ins.push(Vec2::new(x, y));
             vels.push(Vec2::new(vel_x, vel_y));
             let radius = rng.random_range(1.0..4.0);
+            if radius > max_radius {
+                max_radius = radius;
+            }
             radiuses.push(radius);
         }
+        
+        
 
         let instances = GpuBuffer::new(wgpu_context, ins, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE);
         let velocities = GpuBuffer::new(wgpu_context, vels, wgpu::BufferUsages::STORAGE);
@@ -231,6 +240,7 @@ impl ParticleSystem {
             velocities,
             instances,
             radiuses: GpuBuffer::new(wgpu_context, radiuses, wgpu::BufferUsages::VERTEX),
+            max_radius,
             colors: GpuBuffer::new(wgpu_context, vec![glam::vec4(0.1, 0.4, 0.5, 1.0)], wgpu::BufferUsages::VERTEX),
             render_pipeline,
             compute_pipeline,
@@ -260,8 +270,11 @@ impl ParticleSystem {
         self.colors.data()
     }
 
-    
+    pub fn get_max_radius(&self) -> f32 {
+        self.max_radius
+    } 
     pub fn add_particles(&mut self, mouse_pos: &Vec2, wgpu_context: &WgpuContext){
+        
         self.instances.push(
             mouse_pos.clone(),
             wgpu_context
