@@ -280,7 +280,7 @@ impl ParticleSystem {
             wgpu_context
         );
         self.velocities.push(
-            glam::Vec2::new(rand::random_range(1.0..10.0), rand::random_range(1.0..10.0)),
+            Vec2::new(rand::random_range(1.0..10.0), rand::random_range(1.0..10.0)),
             wgpu_context       
         );
 
@@ -289,6 +289,8 @@ impl ParticleSystem {
             rng,
             wgpu_context       
         );
+        
+        self.max_radius = self.max_radius.max(rng);
 
       
         self.compute_bind_group = wgpu_context.get_device().create_bind_group(

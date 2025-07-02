@@ -15,9 +15,9 @@ pub struct Lines {
 impl Lines {
     pub fn new(wgpu_context: &WgpuContext, camera: &Camera) -> Self {
         const TOTAL_LINES: usize = 4;
-        let mut vertices = Vec::new();
-        let mut colors = Vec::new();
-        let mut thicknesses = Vec::new();
+        let vertices = Vec::new();
+        let colors = Vec::new();
+        let thicknesses = Vec::new();
 
         
 
@@ -115,7 +115,14 @@ impl Lines {
         self.vertices.push(start, wgpu_context);
         self.vertices.push(end, wgpu_context);
     }
-}
+
+    pub fn push_all(&mut self, wgpu_context: &WgpuContext, positions: &[Vec2], color: &[Vec4], thickness: &[f32]) {
+        self.colors.push_all(color, wgpu_context);
+        self.thicknesses.push_all(thickness, wgpu_context);
+        self.vertices.push_all(positions, wgpu_context);
+    }
+
+    }
 
 impl Renderable for Lines {
     fn draw(&self, render_pass: &mut wgpu::RenderPass, camera: &Camera) {

@@ -33,7 +33,7 @@ impl State {
         let mut renderer = Renderer::new(&wgpu_context, &world_size).unwrap();
 
         let particles = Rc::new(RefCell::new(ParticleSystem::new(&wgpu_context, renderer.camera())));
-        let grid =  Rc::new(RefCell::new(Grid::new(&wgpu_context, renderer.camera(), world_size, particles.borrow().get_max_radius())));
+        let grid =  Rc::new(RefCell::new(Grid::new(&wgpu_context, renderer.camera(), world_size, particles.borrow().get_max_radius(), particles.borrow().instances().len())));
         
         renderer.add_renderable(particles.clone());
         renderer.add_renderable(grid.clone());
@@ -85,11 +85,18 @@ impl State {
                 match (code, key_state.is_pressed()) {
                     (KeyCode::Escape, true) => event_loop.exit(),
                     (KeyCode::KeyP, true) => {
+                        let prev_num_particles = self.particles.borrow().instances().len();
                         self.particles.borrow_mut().add_particles(
                             &self.renderer.camera().screen_to_world(Vec2::new(self.mouse_position.unwrap().x as f32, self.mouse_position.unwrap().y as f32)),
                             &self.wgpu_context
                         );
+                        let particles_added = self.particles.borrow().instances().len() - prev_num_particles;
+                        self.grid.borrow_mut().reset_grid(&self.wgpu_context, self.renderer.camera(), self.world_size, self.particles.borrow().get_max_radius(), particles_added);
+                    },
+                    (KeyCode::KeyG, true) => {
+                        self.grid.borrow_mut().render_grid();
                     }
+                    
                     _ => {}
                 }
                 
