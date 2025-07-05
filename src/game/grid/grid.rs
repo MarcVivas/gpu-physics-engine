@@ -3,6 +3,7 @@ use crate::game_data::line::lines::Lines;
 use crate::renderer::camera::Camera;
 use crate::renderer::renderable::Renderable;
 use crate::renderer::wgpu_context::WgpuContext;
+use crate::utils::compute_shader::ComputeShader;
 use crate::utils::gpu_buffer::GpuBuffer;
 
 pub struct Grid {
@@ -12,6 +13,8 @@ pub struct Grid {
     lines: Lines,
     cell_ids: GpuBuffer<u32>, // Indicates the cells an object is in. cell_ids[i..i+3] = cell_id_of_object_i
     object_ids: GpuBuffer<u32>, // Need this after sorting to indicate the objects in a cell.
+    build_grid_shader: ComputeShader,
+
 }
 
 
@@ -33,14 +36,35 @@ impl Grid {
             vec![0; buffer_size],
             wgpu::BufferUsages::STORAGE
         );
-        
+
+        let compute_shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("grid.wgsl"));
+
+        // This layout describes what the compute shader can access.
+        let compute_bind_group_layout = wgpu::BindGroupLayoutDescriptor {
+            label: Some("Compute Bind Group Layout"),
+            entries: &[
+                
+            ],
+        }
+            ;
+
+        let build_grid_shader = ComputeShader::new(
+            wgpu_context,
+            &compute_shader,
+            "build_grid", // Assuming you rename cs_main to be more specific
+            &compute_bind_group_layout,
+            (64, 1, 1), // The workgroup size from your WGSL
+        );
+
+
         Grid {
             render_grid: false,
             cell_size,
             world_dimensions,
             lines,
             cell_ids,
-            object_ids,       
+            object_ids,     
+            build_grid_shader,       
         }
     }
     
@@ -105,6 +129,22 @@ impl Renderable for Grid {
         }
     }
     fn update(&self, delta_time:f32, world_size:&glam::Vec2, wgpu_context: &WgpuContext){
-        
+        // Create a command encoder to build the command buffer
+        let mut encoder = wgpu_context.get_device().create_command_encoder(
+            &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
+        );
+
+        self.build_grid_shader.dispatch_by_items(
+            wgpu_context,
+            &mut encoder,
+            "Build grid shader",
+            &[
+                
+            ],
+            (64, 1, 1),
+        );
+
+        // Submit the commands to the GPU
+        wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
     }
 }

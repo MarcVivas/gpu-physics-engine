@@ -2,6 +2,7 @@ use glam::Vec2;
 use rand::Rng;
 use crate::{renderer::{camera::Camera, renderable::Renderable}, utils::gpu_buffer::GpuBuffer};
 use crate::renderer::wgpu_context::WgpuContext;
+use crate::utils::compute_shader::ComputeShader;
 
 pub struct ParticleSystem {
     vertices: GpuBuffer<glam::Vec2>,
@@ -12,10 +13,8 @@ pub struct ParticleSystem {
     max_radius: f32,
     colors: GpuBuffer<glam::Vec4>,
     render_pipeline: wgpu::RenderPipeline,
-    compute_pipeline: wgpu::ComputePipeline,
-    compute_bind_group: wgpu::BindGroup,
     sim_params_buffer: GpuBuffer<SimParams>,
-    compute_bind_group_layout: wgpu::BindGroupLayout,
+    integration_pass: ComputeShader,
 }
 
 #[repr(C)]
@@ -137,8 +136,7 @@ impl ParticleSystem {
         let compute_shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
         // This layout describes what the compute shader can access.
-        let compute_bind_group_layout = wgpu_context.get_device().create_bind_group_layout(
-            &wgpu::BindGroupLayoutDescriptor {
+        let compute_bind_group_layout = wgpu::BindGroupLayoutDescriptor {
                 label: Some("Compute Bind Group Layout"),
                 entries: &[
                     // Binding 0: Simulation Parameters (delta_time, etc.)
@@ -175,49 +173,18 @@ impl ParticleSystem {
                         count: None,
                     },
                 ],
-            },
+            }
+        ;
+
+        let integration_pass = ComputeShader::new(
+            wgpu_context,
+            &compute_shader,
+            "cs_main", // Assuming you rename cs_main to be more specific
+            &compute_bind_group_layout,
+            (64, 1, 1), // The workgroup size from your WGSL
         );
 
-        // This binds the actual buffers to the layout.
-        let compute_bind_group = wgpu_context.get_device().create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                label: Some("Compute Bind Group"),
-                layout: &compute_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: sim_params_buffer.buffer().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: instances.buffer().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: velocities.buffer().as_entire_binding(),
-                    },
-                ],
-            },
-        );
-
-        let compute_pipeline_layout = wgpu_context.get_device().create_pipeline_layout(
-            &wgpu::PipelineLayoutDescriptor {
-                label: Some("Compute Pipeline Layout"),
-                bind_group_layouts: &[&compute_bind_group_layout],
-                push_constant_ranges: &[],
-            },
-        );
-
-        let compute_pipeline = wgpu_context.get_device().create_compute_pipeline(
-            &wgpu::ComputePipelineDescriptor {
-                label: Some("Compute Pipeline"),
-                layout: Some(&compute_pipeline_layout),
-                module: &compute_shader,
-                entry_point: Some("cs_main"), // The name of our compute function in WGSL
-                compilation_options: Default::default(),
-                cache: None,
-            },
-        );
+       
 
 
         Self {
@@ -243,10 +210,8 @@ impl ParticleSystem {
             max_radius,
             colors: GpuBuffer::new(wgpu_context, vec![glam::vec4(0.1, 0.4, 0.5, 1.0)], wgpu::BufferUsages::VERTEX),
             render_pipeline,
-            compute_pipeline,
-            compute_bind_group,
             sim_params_buffer,
-            compute_bind_group_layout,
+            integration_pass,
         }
     }
 
@@ -293,26 +258,7 @@ impl ParticleSystem {
         self.max_radius = self.max_radius.max(rng);
 
       
-        self.compute_bind_group = wgpu_context.get_device().create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                label: Some("Compute Bind Group"),
-                layout: &self.compute_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: self.sim_params_buffer.buffer().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: self.instances.buffer().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: self.velocities.buffer().as_entire_binding(),
-                    },
-                ],
-            },
-        );
+        
 
     }
 }
@@ -348,20 +294,26 @@ impl Renderable for ParticleSystem {
             &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
         );
 
-        {
-            // Start a compute pass
-            let mut compute_pass = encoder.begin_compute_pass(
-                &wgpu::ComputePassDescriptor { label: Some("Particle Compute Pass"), timestamp_writes: None }
-            );
-
-            compute_pass.set_pipeline(&self.compute_pipeline);
-            compute_pass.set_bind_group(0, &self.compute_bind_group, &[]);
-
-            // Calculate how many workgroups we need.
-            // This needs to be the number of particles divided by the workgroup size, rounded up.
-            let workgroup_count = (self.instances.data().len() as f32 / 64.0).ceil() as u32;
-            compute_pass.dispatch_workgroups(workgroup_count, 1, 1);
-        } // The compute pass is finished here.
+        self.integration_pass.dispatch_by_items(
+            wgpu_context, 
+            &mut encoder,
+            "Particle Integration Pass",
+            &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.sim_params_buffer.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.instances.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.velocities.buffer().as_entire_binding(),
+                },
+            ],
+            (self.instances.data().len() as u32, 1, 1),
+        );
 
         // Submit the commands to the GPU
         wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));

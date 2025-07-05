@@ -13,8 +13,8 @@ use crate::game::input_manager::InputManager;
 use crate::renderer::render_timer::RenderTimer;
 use crate::renderer::renderer::Renderer;
 use crate::renderer::wgpu_context::WgpuContext;
-use crate::game::grid::Grid;
-// This will store the state of our game
+use crate::game::grid::grid::Grid;
+// This will store the state of the game
 pub struct State {
     world_size: glam::Vec2,
     wgpu_context: WgpuContext,
