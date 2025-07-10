@@ -1,11 +1,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 use crate::renderer::camera::{Camera};
 use crate::renderer::renderable::Renderable;
 use crate::renderer::wgpu_context::WgpuContext;
-use crate::game_data::particle::particle_system::ParticleSystem;
-use crate::game_data::line::lines::Lines;
+
 
 // Manages multiple render pipelines
 pub struct Renderer {
@@ -89,11 +87,12 @@ impl Renderer {
         self.camera.process_events(event)
     }
 
+    // Update renderables
     pub fn update(&mut self, dt: f32, wgpu_context: &WgpuContext, world_size: &glam::Vec2) {
         // Update camera based on input and delta time
         self.camera.update(dt);
         for renderable in &mut self.renderables {
-            renderable.borrow().update(dt, world_size, wgpu_context);
+            renderable.borrow_mut().update(dt, world_size, wgpu_context);
         }
         // Update camera matrices and upload to GPU
         self.update_camera_matrices(wgpu_context);

@@ -33,16 +33,16 @@ impl State {
         let mut renderer = Renderer::new(&wgpu_context, &world_size).unwrap();
 
         let particles = Rc::new(RefCell::new(ParticleSystem::new(&wgpu_context, renderer.camera())));
-        let grid =  Rc::new(RefCell::new(Grid::new(&wgpu_context, renderer.camera(), world_size, particles.borrow().get_max_radius(), particles.borrow().instances().len())));
-        
+        let grid =  Rc::new(RefCell::new(Grid::new(&wgpu_context, renderer.camera(), world_size, particles.borrow().get_max_radius(), particles.clone())));
+
         renderer.add_renderable(particles.clone());
         renderer.add_renderable(grid.clone());
 
         let render_timer = RenderTimer::new();
         let input_manager = InputManager::new();
-        
+
         let mouse_position = None;
-        
+
         Ok(Self {
             world_size,
             wgpu_context,
@@ -96,10 +96,10 @@ impl State {
                     (KeyCode::KeyG, true) => {
                         self.grid.borrow_mut().render_grid();
                     }
-                    
+
                     _ => {}
                 }
-                
+
             },
             WindowEvent::CursorMoved { position, .. } => {
                 // Update the stored mouse position

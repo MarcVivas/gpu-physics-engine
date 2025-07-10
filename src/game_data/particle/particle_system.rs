@@ -38,9 +38,9 @@ impl ParticleSystem {
         let mut radiuses = Vec::with_capacity(NUM_PARTICLES);
         let mut vels = Vec::with_capacity(NUM_PARTICLES);
 
-        
+
         let mut max_radius = f32::MIN;
-        
+
         for _ in 0..NUM_PARTICLES {
             let x = rng.random_range(0.0..WORLD_WIDTH);
             let y = rng.random_range(0.0..WORLD_HEIGHT);
@@ -54,12 +54,12 @@ impl ParticleSystem {
             }
             radiuses.push(radius);
         }
-        
-        
+
+
 
         let instances = GpuBuffer::new(wgpu_context, ins, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE);
         let velocities = GpuBuffer::new(wgpu_context, vels, wgpu::BufferUsages::STORAGE);
-        
+
         let shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
         let render_pipeline_layout = wgpu_context.get_device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
             label: Some("Render Pipeline Layout"),
@@ -124,7 +124,7 @@ impl ParticleSystem {
             cache: None,
         });
 
-        
+
 
         let sim_params_buffer = GpuBuffer::new(
             wgpu_context,
@@ -184,7 +184,7 @@ impl ParticleSystem {
             (64, 1, 1), // The workgroup size from your WGSL
         );
 
-       
+
 
 
         Self {
@@ -215,6 +215,10 @@ impl ParticleSystem {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.instances.len()
+    }
+
     pub fn vertices(&self) -> &[glam::Vec2] {
         self.vertices.data()
     }
@@ -223,8 +227,8 @@ impl ParticleSystem {
         self.indices.data()
     }
 
-    pub fn instances(&self) -> &[glam::Vec2] {
-        self.instances.data()
+    pub fn instances(&self) -> &GpuBuffer<Vec2>{
+        &self.instances
     }
 
     pub fn radiuses(&self) -> &[f32] {
@@ -237,28 +241,28 @@ impl ParticleSystem {
 
     pub fn get_max_radius(&self) -> f32 {
         self.max_radius
-    } 
+    }
     pub fn add_particles(&mut self, mouse_pos: &Vec2, wgpu_context: &WgpuContext){
-        
+
         self.instances.push(
             mouse_pos.clone(),
             wgpu_context
         );
         self.velocities.push(
             Vec2::new(rand::random_range(1.0..10.0), rand::random_range(1.0..10.0)),
-            wgpu_context       
+            wgpu_context
         );
 
         let rng = rand::random_range(1.0..10.0);
         self.radiuses.push(
             rng,
-            wgpu_context       
+            wgpu_context
         );
-        
+
         self.max_radius = self.max_radius.max(rng);
 
-      
-        
+
+
 
     }
 }
@@ -272,10 +276,10 @@ impl Renderable for ParticleSystem {
         render_pass.set_vertex_buffer(2, self.radiuses.buffer().slice(..));
 
         render_pass.set_bind_group(0, camera.binding_group(), &[]);
-        render_pass.draw_indexed(0..self.indices().len() as u32, 0, 0..self.instances().len() as u32);
+        render_pass.draw_indexed(0..self.indices().len() as u32, 0, 0..self.instances.len() as u32);
     }
 
-    fn update(&self, delta_time:f32, world_size:&glam::Vec2, wgpu_context: &WgpuContext) {
+    fn update(&mut self, delta_time:f32, world_size:&glam::Vec2, wgpu_context: &WgpuContext) {
         // First, update the delta_time in the uniform buffer
         let sim_params = SimParams {
             delta_time,
@@ -295,7 +299,7 @@ impl Renderable for ParticleSystem {
         );
 
         self.integration_pass.dispatch_by_items(
-            wgpu_context, 
+            wgpu_context,
             &mut encoder,
             "Particle Integration Pass",
             &[

@@ -3,5 +3,5 @@ use crate::renderer::wgpu_context::WgpuContext;
 
 pub trait Renderable {
     fn draw(&self, render_pass: &mut wgpu::RenderPass, camera: &Camera);
-    fn update(&self, delta_time:f32, world_size:&glam::Vec2, wgpu_context: &WgpuContext);
+    fn update(&mut self, delta_time:f32, world_size:&glam::Vec2, wgpu_context: &WgpuContext);
 }

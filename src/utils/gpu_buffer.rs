@@ -23,7 +23,7 @@ impl<T: bytemuck::Pod> GpuBuffer<T>{
             0,
             bytemuck::cast_slice(&data)
         );
-        
+
         Self { data, buffer, usage}
     }
 
@@ -41,11 +41,15 @@ impl<T: bytemuck::Pod> GpuBuffer<T>{
         self.upload(wgpu_context, values.len());
     }
 
-   
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+
 
 
     // Update the gpu buffer with the data in the vector
-    pub fn upload(&mut self, wgpu_context: &WgpuContext, total_elems_added: usize) {
+    fn upload(&mut self, wgpu_context: &WgpuContext, total_elems_added: usize) {
         let elem_size = size_of::<T>().max(1) as u64;
         let needed_bytes = (self.data.len() as u64) * elem_size;
         let current_capacity = self.buffer.size();
@@ -81,8 +85,8 @@ impl<T: bytemuck::Pod> GpuBuffer<T>{
             &self.buffer,
             byte_offset,
             bytemuck::cast_slice(slice),
-        );    
-        
+        );
+
     }
 
     /// Downloads data from the GPU buffer to the CPU-side `Vec`.
@@ -173,6 +177,19 @@ impl<T: bytemuck::Pod> GpuBuffer<T>{
             }
         }
     }
+
+    pub fn replace_elem(&mut self, new_data: T, index: usize, wgpu_context: &WgpuContext) {
+        if index >= self.data.len() {
+            panic!("Index out of bounds");
+        }
+        self.data[index] = new_data;
+        wgpu_context.get_queue().write_buffer(
+            &self.buffer,
+            0,
+            bytemuck::cast_slice(&self.data),
+        );
+    }
+
     pub fn data(&self) -> &Vec<T>{
         &self.data
     }

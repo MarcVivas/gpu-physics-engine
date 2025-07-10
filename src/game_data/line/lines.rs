@@ -19,7 +19,7 @@ impl Lines {
         let colors = Vec::new();
         let thicknesses = Vec::new();
 
-        
+
 
         let shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("line.wgsl"));
         let render_pipeline_layout = wgpu_context.get_device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
@@ -104,9 +104,9 @@ impl Lines {
             render_pipeline,
         }
     }
-    
+
     pub fn push(&mut self, wgpu_context: &WgpuContext, start: Vec2, end: Vec2, color: Vec4, thickness: f32) {
-        self.colors.push(color, wgpu_context);        
+        self.colors.push(color, wgpu_context);
         self.colors.push(color, wgpu_context);
 
         self.thicknesses.push(thickness, wgpu_context);
@@ -135,7 +135,7 @@ impl Renderable for Lines {
         render_pass.draw(0..self.vertices.data().len() as u32, 0..1);
     }
 
-    fn update(&self, delta_time: f32, world_size: &Vec2, wgpu_context: &WgpuContext) {
-        
+    fn update(&mut self, delta_time: f32, world_size: &Vec2, wgpu_context: &WgpuContext) {
+
     }
 }
