@@ -9,7 +9,7 @@ pub struct ParticleSystem {
     indices: GpuBuffer<u32>,
     instances: GpuBuffer<glam::Vec2>,
     velocities: GpuBuffer<glam::Vec2>,
-    radiuses: GpuBuffer<f32>,
+    radius: GpuBuffer<f32>,
     max_radius: f32,
     colors: GpuBuffer<glam::Vec4>,
     render_pipeline: wgpu::RenderPipeline,
@@ -191,10 +191,10 @@ impl ParticleSystem {
             vertices: GpuBuffer::new(
                 wgpu_context,
                 vec![
-                glam::Vec2::new(-0.5, 0.5),
-                glam::Vec2::new(0.5, 0.5),
-                glam::Vec2::new(0.5, -0.5),
-                glam::Vec2::new(-0.5, -0.5),
+                Vec2::new(-0.5, 0.5),
+                Vec2::new(0.5, 0.5),
+                Vec2::new(0.5, -0.5),
+                Vec2::new(-0.5, -0.5),
                 ],
                 wgpu::BufferUsages::VERTEX
             ),
@@ -206,7 +206,7 @@ impl ParticleSystem {
             ),
             velocities,
             instances,
-            radiuses: GpuBuffer::new(wgpu_context, radiuses, wgpu::BufferUsages::VERTEX),
+            radius: GpuBuffer::new(wgpu_context, radiuses, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE),
             max_radius,
             colors: GpuBuffer::new(wgpu_context, vec![glam::vec4(0.1, 0.4, 0.5, 1.0)], wgpu::BufferUsages::VERTEX),
             render_pipeline,
@@ -231,8 +231,8 @@ impl ParticleSystem {
         &self.instances
     }
 
-    pub fn radiuses(&self) -> &[f32] {
-        self.radiuses.data()
+    pub fn radius(&self) -> &GpuBuffer<f32> {
+        &self.radius
     }
 
     pub fn color(&self) -> &[glam::Vec4] {
@@ -254,7 +254,7 @@ impl ParticleSystem {
         );
 
         let rng = rand::random_range(1.0..10.0);
-        self.radiuses.push(
+        self.radius.push(
             rng,
             wgpu_context
         );
@@ -273,7 +273,7 @@ impl Renderable for ParticleSystem {
         render_pass.set_vertex_buffer(0, self.vertices.buffer().slice(..));
         render_pass.set_index_buffer(self.indices.buffer().slice(..), wgpu::IndexFormat::Uint32);
         render_pass.set_vertex_buffer(1, self.instances.buffer().slice(..));
-        render_pass.set_vertex_buffer(2, self.radiuses.buffer().slice(..));
+        render_pass.set_vertex_buffer(2, self.radius.buffer().slice(..));
 
         render_pass.set_bind_group(0, camera.binding_group(), &[]);
         render_pass.draw_indexed(0..self.indices().len() as u32, 0, 0..self.instances.len() as u32);

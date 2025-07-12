@@ -16,7 +16,7 @@ use crate::renderer::wgpu_context::WgpuContext;
 use crate::game::grid::grid::Grid;
 // This will store the state of the game
 pub struct State {
-    world_size: glam::Vec2,
+    world_size: Vec2,
     wgpu_context: WgpuContext,
     render_timer: RenderTimer,
     input_manager: InputManager,
