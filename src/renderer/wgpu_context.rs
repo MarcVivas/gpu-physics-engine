@@ -6,7 +6,7 @@ use crate::renderer::surface_manager::SurfaceManager;
 pub struct WgpuContext {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    surface_manager: SurfaceManager,
+    surface_manager: Option<SurfaceManager>,
 }
 
 impl WgpuContext {
@@ -32,7 +32,7 @@ impl WgpuContext {
                 force_fallback_adapter: false,
             }).await?;
 
-        let surface_manager: SurfaceManager = SurfaceManager::new(window, &instance, &adapter);
+        let surface_manager: Option<SurfaceManager> = Some(SurfaceManager::new(window, &instance, &adapter));
                 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor{
@@ -56,23 +56,55 @@ impl WgpuContext {
         })
     }
     
+    pub async fn new_for_test() -> anyhow::Result<Self> {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: None, // <-- NO SURFACE
+                force_fallback_adapter: false,
+            })
+            .await?;
+            
+
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    label: Some("Test Device"),
+                    required_features: wgpu::Features::empty(), // Add features if your shaders need them
+                    required_limits: wgpu::Limits::default(),
+                    ..Default::default()
+                },
+            )
+            .await?;
+
+        Ok(Self {
+            device,
+            queue,
+            surface_manager: None, // <-- NO SURFACE MANAGER
+        })
+    }
+    
     pub fn window_size(&self) -> winit::dpi::PhysicalSize<u32> {
-        self.surface_manager.window_size()
+        if self.surface_manager.is_none() {
+            return winit::dpi::PhysicalSize::new(0, 0);
+        }
+        self.surface_manager.as_ref().expect("No surface in this context").window_size()
     }
     
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.surface_manager.resize(width, height, &self.device);
+        self.surface_manager.as_mut().expect("No surface in this context").resize(width, height, &self.device);
     }
     
     pub fn get_window(&self) -> &Arc<Window> {
-        self.surface_manager.get_window()
+        self.surface_manager.as_ref().expect("No surface in this context").get_window()
     }
     
     pub fn get_surface(&self) -> &wgpu::Surface<'static> {
-        self.surface_manager.get_surface()
+        self.surface_manager.as_ref().expect("No surface manager in this context").get_surface()
     }
     pub fn is_surface_configured(&self) -> bool {
-        self.surface_manager.is_surface_configured()
+        self.surface_manager.as_ref().expect("No surface in this context").is_surface_configured()
     }
     
     pub fn get_device(&self) -> &wgpu::Device {
@@ -84,6 +116,6 @@ impl WgpuContext {
     }
     
     pub fn get_surface_config(&self) -> &wgpu::SurfaceConfiguration{
-        &self.surface_manager.get_config()
+        &self.surface_manager.as_ref().expect("No surface in this context").get_config()
     }
 }

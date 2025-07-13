@@ -5,14 +5,14 @@ use crate::renderer::wgpu_context::WgpuContext;
 use crate::utils::compute_shader::ComputeShader;
 
 pub struct ParticleSystem {
-    vertices: GpuBuffer<glam::Vec2>,
+    vertices: GpuBuffer<Vec2>,
     indices: GpuBuffer<u32>,
-    instances: GpuBuffer<glam::Vec2>,
-    velocities: GpuBuffer<glam::Vec2>,
+    instances: GpuBuffer<Vec2>,
+    velocities: GpuBuffer<Vec2>,
     radius: GpuBuffer<f32>,
     max_radius: f32,
     colors: GpuBuffer<glam::Vec4>,
-    render_pipeline: wgpu::RenderPipeline,
+    render_pipeline: Option<wgpu::RenderPipeline>,
     sim_params_buffer: GpuBuffer<SimParams>,
     integration_pass: ComputeShader,
 }
@@ -123,98 +123,125 @@ impl ParticleSystem {
             multiview: None,
             cache: None,
         });
-
-
-
+        
+        
+       
         let sim_params_buffer = GpuBuffer::new(
             wgpu_context,
             vec![SimParams { delta_time: 0.0, world_width: WORLD_WIDTH, world_height: WORLD_HEIGHT, _padding: 0.0 }],
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         );
-
-        // 3. Create the Compute Pipeline
-        let compute_shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
-
-        // This layout describes what the compute shader can access.
-        let compute_bind_group_layout = wgpu::BindGroupLayoutDescriptor {
-                label: Some("Compute Bind Group Layout"),
-                entries: &[
-                    // Binding 0: Simulation Parameters (delta_time, etc.)
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Binding 1: The particle positions
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false }, // false means read-write
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // Binding 2: The particle velocities
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false }, // false means read-write
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-            }
-        ;
-
-        let integration_pass = ComputeShader::new(
-            wgpu_context,
-            &compute_shader,
-            "cs_main", // Assuming you rename cs_main to be more specific
-            &compute_bind_group_layout,
-            (64, 1, 1), // The workgroup size from your WGSL
-        );
+        
 
 
 
 
         Self {
-            vertices: GpuBuffer::new(
-                wgpu_context,
-                vec![
-                Vec2::new(-0.5, 0.5),
-                Vec2::new(0.5, 0.5),
-                Vec2::new(0.5, -0.5),
-                Vec2::new(-0.5, -0.5),
-                ],
-                wgpu::BufferUsages::VERTEX
-            ),
-            indices: GpuBuffer::new(wgpu_context, vec![
-                0, 3, 2,
-                2, 1, 0
-            ],
-            wgpu::BufferUsages::INDEX
-            ),
+            vertices: Self::gen_model_vertices(wgpu_context),
+            indices: Self::gen_model_indices(wgpu_context),
             velocities,
             instances,
             radius: GpuBuffer::new(wgpu_context, radiuses, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE),
             max_radius,
             colors: GpuBuffer::new(wgpu_context, vec![glam::vec4(0.1, 0.4, 0.5, 1.0)], wgpu::BufferUsages::VERTEX),
-            render_pipeline,
+            render_pipeline: Some(render_pipeline),
             sim_params_buffer,
-            integration_pass,
+            integration_pass: Self::gen_integration_pass(wgpu_context),
         }
     }
 
+    pub fn new_from_buffers(wgpu_context: &WgpuContext, positions: GpuBuffer<Vec2>, radii: GpuBuffer<f32>) -> Self {
+        let velocities = GpuBuffer::new(
+            wgpu_context,
+            vec![Vec2::ZERO; positions.len()],
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST
+        );
+        let max_radius: f32 = radii.data().iter().max_by(|x, y| x.abs().partial_cmp(&y.abs()).unwrap()).unwrap().clone();
+        Self {
+            vertices: Self::gen_model_vertices(wgpu_context),
+            indices: Self::gen_model_indices(wgpu_context),
+            velocities,
+            instances: positions,
+            radius: radii,
+            max_radius,
+            colors: GpuBuffer::new(wgpu_context, vec![glam::vec4(0.1, 0.4, 0.5, 1.0)], wgpu::BufferUsages::VERTEX),
+            render_pipeline: None,
+            sim_params_buffer: GpuBuffer::new(wgpu_context, vec![SimParams { delta_time: 0.0, world_width: 1920.0, world_height: 1080.0, _padding: 0.0 }], wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST),
+            integration_pass: Self::gen_integration_pass(wgpu_context),
+        }
+    }
+    
+    fn gen_model_vertices(wgpu_context: &WgpuContext) -> GpuBuffer<Vec2>{
+        GpuBuffer::new(
+            wgpu_context,
+            vec![
+                Vec2::new(-0.5, 0.5),
+                Vec2::new(0.5, 0.5),
+                Vec2::new(0.5, -0.5),
+                Vec2::new(-0.5, -0.5),
+            ],
+            wgpu::BufferUsages::VERTEX
+        )
+    }
+
+    fn gen_model_indices(wgpu_context: &WgpuContext) -> GpuBuffer<u32>{
+        GpuBuffer::new(wgpu_context, vec![
+            0, 3, 2,
+            2, 1, 0
+        ], wgpu::BufferUsages::INDEX)
+    }
+    
+    fn gen_integration_pass(wgpu_context: &WgpuContext) -> ComputeShader {
+        let compute_shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
+
+        // This layout describes what the compute shader can access.
+        let compute_bind_group_layout = wgpu::BindGroupLayoutDescriptor {
+            label: Some("Compute Bind Group Layout"),
+            entries: &[
+                // Binding 0: Simulation Parameters (delta_time, etc.)
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // Binding 1: The particle positions
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false }, // false means read-write
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // Binding 2: The particle velocities
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false }, // false means read-write
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        };
+        
+        ComputeShader::new(
+            wgpu_context,
+            &compute_shader,
+            "cs_main", // Assuming you rename cs_main to be more specific
+            &compute_bind_group_layout,
+            (64, 1, 1), // The workgroup size from your WGSL
+        )
+    }
     pub fn len(&self) -> usize {
         self.instances.len()
     }
@@ -269,7 +296,7 @@ impl ParticleSystem {
 
 impl Renderable for ParticleSystem {
     fn draw(&self, render_pass: &mut wgpu::RenderPass, camera: &Camera){
-        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_pipeline(self.render_pipeline.as_ref().expect("Render pipeline not set"));
         render_pass.set_vertex_buffer(0, self.vertices.buffer().slice(..));
         render_pass.set_index_buffer(self.indices.buffer().slice(..), wgpu::IndexFormat::Uint32);
         render_pass.set_vertex_buffer(1, self.instances.buffer().slice(..));
