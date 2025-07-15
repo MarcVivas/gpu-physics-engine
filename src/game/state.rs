@@ -58,6 +58,8 @@ impl State {
 
 
     pub fn render_loop(&mut self, event: &WindowEvent, event_loop: &ActiveEventLoop){
+        self.renderer.process_events(event);
+
         match event {
             WindowEvent::Resized(size ) => self.wgpu_context.resize(size.width, size.height),
             WindowEvent::RedrawRequested => {
@@ -108,8 +110,6 @@ impl State {
             _ => {
                 // Handle global input through InputManager (no renderer needed)
                 self.input_manager.manage_input(event, event_loop);
-                // Handle renderer input directly (camera controls)
-                self.renderer.process_events(event);
             }
         }
 
