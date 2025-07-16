@@ -5,6 +5,7 @@ use crate::renderer::wgpu_context::WgpuContext;
 pub struct ComputeShader {
     pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
+    bind_group: wgpu::BindGroup,
     workgroup_size: (u32, u32, u32),
 }
 
@@ -12,12 +13,14 @@ impl ComputeShader {
     // The `new` method is unchanged.
     pub fn new(
         wgpu_context: &WgpuContext,
-        shader_module: &wgpu::ShaderModule,
+        shader_file: wgpu::ShaderModuleDescriptor,
         entry_point: &str,
         bind_group_layout_descriptor: &wgpu::BindGroupLayoutDescriptor,
+        bind_group_entries: &[wgpu::BindGroupEntry],
         workgroup_size: (u32, u32, u32),
     ) -> Self {
         let device = wgpu_context.get_device();
+        let compute_shader = device.create_shader_module(shader_file);
 
         let bind_group_layout = device.create_bind_group_layout(bind_group_layout_descriptor);
 
@@ -30,16 +33,26 @@ impl ComputeShader {
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some(&format!("Compute Pipeline for {}", entry_point)),
             layout: Some(&pipeline_layout),
-            module: shader_module,
+            module: &compute_shader,
             entry_point: Some(entry_point),
             compilation_options: Default::default(),
             cache: None,
         });
 
+        // Create bind group
+        let bind_group = wgpu_context.get_device().create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &bind_group_layout,
+                entries: bind_group_entries,
+            }
+        );
+
         Self {
             pipeline,
             bind_group_layout,
             workgroup_size,
+            bind_group
         }
     }
 
@@ -52,36 +65,25 @@ impl ComputeShader {
     /// - `dispatch_size`: The number of workgroups to launch in (x, y, z).
     pub fn dispatch(
         &self,
-        wgpu_context: &WgpuContext, // <-- ADDED THIS PARAMETER
         encoder: &mut wgpu::CommandEncoder,
-        label: &str,
-        bind_group_entries: &[wgpu::BindGroupEntry],
         dispatch_size: (u32, u32, u32),
     ) {
-        // Create a bind group on-the-fly using the device from the context.
-        let bind_group = wgpu_context.get_device().create_bind_group(&wgpu::BindGroupDescriptor { // <-- CORRECTED
-            label: Some(label),
-            layout: &self.bind_group_layout,
-            entries: bind_group_entries,
-        });
 
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some(label),
+            label: None,
             timestamp_writes: None,
         });
 
         cpass.set_pipeline(&self.pipeline);
-        cpass.set_bind_group(0, &bind_group, &[]);
+        cpass.set_bind_group(0, &self.bind_group, &[]);
         cpass.dispatch_workgroups(dispatch_size.0, dispatch_size.1, dispatch_size.2);
     }
+
 
     /// A helper function to dispatch based on the total number of items to process.
     pub fn dispatch_by_items(
         &self,
-        wgpu_context: &WgpuContext, // <-- ADDED THIS PARAMETER
         encoder: &mut wgpu::CommandEncoder,
-        label: &str,
-        bind_group_entries: &[wgpu::BindGroupEntry],
         item_count: (u32, u32, u32),
     ) {
         let dispatch_x = (item_count.0 + self.workgroup_size.0 - 1) / self.workgroup_size.0;
@@ -90,11 +92,19 @@ impl ComputeShader {
 
         // Pass the context through to the main dispatch method
         self.dispatch(
-            wgpu_context,
             encoder,
-            label,
-            bind_group_entries,
             (dispatch_x, dispatch_y, dispatch_z)
+        );
+    }
+
+    /// A helper function to update the binding group with the given entries.
+    pub fn update_binding_group(&mut self, wgpu_context: &WgpuContext, bind_group_entries: &[wgpu::BindGroupEntry]) {
+        self.bind_group = wgpu_context.get_device().create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.bind_group_layout,
+                entries: bind_group_entries,
+            }
         );
     }
 }
