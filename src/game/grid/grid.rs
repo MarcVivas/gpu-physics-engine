@@ -7,8 +7,11 @@ use crate::renderer::wgpu_context::WgpuContext;
 use crate::utils::compute_shader::ComputeShader;
 use crate::utils::gpu_buffer::GpuBuffer;
 use std::cell::RefCell;
+use std::num::NonZeroU32;
 use std::rc::Rc;
 use wgpu::BufferAsyncError;
+use crate::utils;
+use crate::utils::radix_sort::radix_sort::GPUSorter;
 
 pub struct Grid {
     dim: u32,
@@ -165,6 +168,16 @@ impl Grid {
             ],
             (64, 1, 1),
         );
+        
+        /*
+        let sorter: GPUSorter = GPUSorter::new(wgpu_context.get_device(), utils::guess_workgroup_size(wgpu_context).unwrap());
+        sorter.create_sort_buffers(
+            wgpu_context.get_device(),
+            NonZeroU32::new(buffer_len as u32).unwrap(),
+            cell_ids.buffer(),
+            object_ids.buffer(),
+        );
+        */
         Grid {
             dim,
             render_grid: false,
@@ -303,6 +316,8 @@ impl Renderable for Grid {
 
         // Step 1: Build the cell IDs array
         self.build_cell_ids(&mut encoder, total_particles);
+        
+        //self.gpu_sorter.sort(&mut encoder, wgpu_context.get_queue(), None);
 
 
         // Submit the commands to the GPU

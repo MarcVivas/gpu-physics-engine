@@ -59,16 +59,17 @@ const NUM_PASSES: u32 = BYTES_PER_PAYLOAD_ELEM;
 
 
 /// Sorting pipeline. It can be used to sort key-value pairs stored in [SortBuffers]
-pub struct GPUSorter {
+pub struct GPUSorter<'a> {
     zero_p: wgpu::ComputePipeline,
     histogram_p: wgpu::ComputePipeline,
     prefix_p: wgpu::ComputePipeline,
     scatter_even_p: wgpu::ComputePipeline,
     scatter_odd_p: wgpu::ComputePipeline,
+    sorting_buffers: SortBuffers<'a>,
 }
 
-impl GPUSorter {
-    pub fn new(device: &wgpu::Device, subgroup_size: u32) -> Self {
+impl <'a> GPUSorter<'a> {
+    pub fn new(device: &wgpu::Device, subgroup_size: u32, length: NonZeroU32, keys: &'a wgpu::Buffer, payload: &'a wgpu::Buffer) -> Self {
         // special variables for scatter shade
         let histogram_sg_size = subgroup_size;
         let rs_sweep_0_size = RS_RADIX_SIZE / histogram_sg_size;
@@ -179,6 +180,7 @@ impl GPUSorter {
             prefix_p,
             scatter_even_p,
             scatter_odd_p,
+            sorting_buffers: Self::create_sort_buffers(device, length, keys, payload),
         };
     }
 
@@ -255,7 +257,7 @@ impl GPUSorter {
     // calculates and allocates a buffer that is sufficient for holding all needed information for
     // sorting. This includes the histograms and the temporary scatter buffer
     // @return: tuple containing [internal memory buffer (should be bound at shader binding 1, count_ru_histo (padded size needed for the keyval buffer)]
-    fn create_internal_mem_buffer(&self, device: &wgpu::Device, length: u32) -> wgpu::Buffer {
+    fn create_internal_mem_buffer(device: &wgpu::Device, length: u32) -> wgpu::Buffer {
         // currently only a few different key bits are supported, maybe has to be extended
 
         // The "internal" memory map looks like this:
@@ -426,7 +428,8 @@ impl GPUSorter {
     /// otherwise everything is sorted.
     ///
     /// **IMPORTANT**: if less than the whole buffer is sorted the rest of the keys buffer will be be corrupted
-    pub fn sort(&self, encoder: &mut wgpu::CommandEncoder,queue:&wgpu::Queue, sort_buffers: &SortBuffers, sort_first_n:Option<u32>) {
+    pub fn sort(&self, encoder: &mut wgpu::CommandEncoder,queue:&wgpu::Queue, sort_first_n:Option<u32>) {
+        let sort_buffers = &self.sorting_buffers;
         let bind_group = &sort_buffers.bind_group;
         let num_elements = sort_first_n.unwrap_or(sort_buffers.len());
 
@@ -476,8 +479,7 @@ impl GPUSorter {
     /// # Panics
     ///
     /// This function will panic if the provided buffers are not large enough.
-    pub fn create_sort_buffers <'a>(
-        &self,
+    fn create_sort_buffers(
         device: &wgpu::Device,
         length: NonZeroU32,
         keys_a: &'a wgpu::Buffer,
@@ -515,7 +517,7 @@ impl GPUSorter {
             mapped_at_creation: false,
         });
 
-        let internal_mem_buffer = self.create_internal_mem_buffer(device, length);
+        let internal_mem_buffer = Self::create_internal_mem_buffer(device, length);
 
         let uniform_infos = Self::general_info_data(length);
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -573,43 +575,6 @@ impl GPUSorter {
         count_ru_histo
     }
 
-    /// Tests if the sorter works. This is needed to guess the subgroup size.
-    pub fn test_sort(&self, wgpu_context: &WgpuContext) -> bool {
-
-        let device = wgpu_context.get_device();
-        let queue = wgpu_context.get_queue();
-
-
-        // simply runs a small sort and check if the sorting result is correct
-        let n = 8192; // means that 2 workgroups are needed for sorting
-        let mut scrambled_data: Vec<u32> = (0..n).rev().collect();
-        let required_len = GPUSorter::get_required_keys_buffer_size(scrambled_data.len() as u32);
-        scrambled_data.resize(required_len as usize, u32::MAX);
-
-
-
-        let mut scrambled_keys_buffer: GpuBuffer<u32> = GpuBuffer::new(wgpu_context, scrambled_data.clone(), wgpu::BufferUsages::STORAGE);
-        let mut scrambled_payload_buffer: GpuBuffer<u32> = GpuBuffer::new(wgpu_context, scrambled_data.clone(), wgpu::BufferUsages::STORAGE);
-
-
-        let sorted_data: Vec<u32> = (0..n).collect();
-
-        let sort_buffers = self.create_sort_buffers(device, NonZeroU32::new(n).unwrap(), scrambled_keys_buffer.buffer(), scrambled_payload_buffer.buffer());
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("GPURSSorter test_sort"),
-        });
-
-
-        self.sort(&mut encoder, queue, &sort_buffers, None);
-        let idx = queue.submit([encoder.finish()]);
-        device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(idx)).unwrap();
-
-        let sorted_keys: Vec<u32> = scrambled_keys_buffer.download(wgpu_context).unwrap().as_slice()[0..n as usize].to_owned();
-        let sorted_payload: Vec<u32> = scrambled_payload_buffer.download(wgpu_context).unwrap().as_slice()[0..n as usize].to_owned();
-
-        sorted_keys.into_iter().zip(sorted_data.clone().into_iter()).all(|(a,b)|a==b) && sorted_payload.into_iter().zip(sorted_data.into_iter()).all(|(a,b)|a==b)
-    }
     
     
     
