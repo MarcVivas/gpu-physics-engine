@@ -30,7 +30,7 @@ struct SimParams {
 
 impl ParticleSystem {
     pub fn new(wgpu_context: &WgpuContext, camera: &Camera) -> Self {
-        const NUM_PARTICLES: usize = 10;
+        const NUM_PARTICLES: usize = 100000;
         const WORLD_WIDTH: f32 = 1920.0;
         const WORLD_HEIGHT: f32 = 1080.0;
 

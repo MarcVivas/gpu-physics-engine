@@ -3,8 +3,6 @@
 
 use game_engine::renderer::camera::Camera;
 use glam::{Vec2};
-use std::rc::Rc;
-use std::cell::RefCell;
 use game_engine::game_data::particle::particle_system::ParticleSystem;
 use game_engine::renderer::wgpu_context::WgpuContext;
 use game_engine::utils::gpu_buffer::GpuBuffer;

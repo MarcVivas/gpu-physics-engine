@@ -85,7 +85,7 @@ fn test_grid_build_cell_ids_with_multiple_particles() {
     let mut encoder = wgpu_context.get_device().create_command_encoder(
         &wgpu::CommandEncoderDescriptor { label: Some("Multi-Particle Test Encoder") }
     );
-    grid.build_cell_ids(wgpu_context, &mut encoder, num_particles);
+    grid.build_cell_ids(&mut encoder, num_particles);
     wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
 
 

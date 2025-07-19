@@ -15,7 +15,8 @@ use std::{
 
 use bytemuck::bytes_of;
 use wgpu::{util::DeviceExt, ComputePassDescriptor};
-
+use crate::renderer::wgpu_context::WgpuContext;
+use crate::utils::gpu_buffer::GpuBuffer;
 // IMPORTANT: the following constants have to be synced with the numbers in radix_sort.wgsl
 
 /// workgroup size of histogram shader
@@ -251,50 +252,6 @@ impl GPUSorter {
         });
     }
 
-    fn create_keyval_buffers(
-        device: &wgpu::Device,
-        length: u32,
-    ) -> (wgpu::Buffer, wgpu::Buffer, wgpu::Buffer, wgpu::Buffer) {
-        // add padding so that our buffer size is a multiple of keys_per_workgroup
-        let count_ru_histo = keys_buffer_size(length) * RS_KEYVAL_SIZE;
-
-        // creating the two needed buffers for sorting
-        let keys = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("radix sort keys buffer"),
-            size: (count_ru_histo * BYTES_PER_PAYLOAD_ELEM) as u64,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-
-        // auxiliary buffer for keys
-        let keys_aux = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("radix sort keys auxiliary buffer"),
-            size: (count_ru_histo * BYTES_PER_PAYLOAD_ELEM) as u64,
-            usage: wgpu::BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        });
-
-        let payload_size = length * BYTES_PER_PAYLOAD_ELEM; // make sure that we have at least 1 byte of data;
-        let payload = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("radix sort payload buffer"),
-            size: payload_size as u64,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        // auxiliary buffer for payload/values
-        let payload_aux = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("radix sort payload auxiliary buffer"),
-            size: payload_size as u64,
-            usage: wgpu::BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        });
-        return (keys, keys_aux, payload, payload_aux);
-    }
-
     // calculates and allocates a buffer that is sufficient for holding all needed information for
     // sorting. This includes the histograms and the temporary scatter buffer
     // @return: tuple containing [internal memory buffer (should be bound at shader binding 1, count_ru_histo (padded size needed for the keyval buffer)]
@@ -507,63 +464,6 @@ impl GPUSorter {
         self.record_scatter_keys_indirect(bind_group, dispatch_buffer, encoder);
     }
 
-    /// creates all buffers necessary for sorting
-    pub fn create_sort_buffers(&self, device: &wgpu::Device, length: NonZeroU32) -> SortBuffers {
-        let length = length.get();
-
-        let (keys_a, keys_b, payload_a, payload_b) =
-            GPUSorter::create_keyval_buffers(&device, length);
-        let internal_mem_buffer = self.create_internal_mem_buffer(&device, length);
-
-        let uniform_infos = Self::general_info_data(length);
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("radix sort uniform buffer"),
-            contents: bytemuck::bytes_of(&uniform_infos),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("radix sort bind group"),
-            layout: &Self::bind_group_layout(device),
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: internal_mem_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: keys_a.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: keys_b.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: payload_a.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: payload_b.as_entire_binding(),
-                },
-            ],
-        });
-        // return (uniform_buffer, bind_group);
-        SortBuffers {
-            keys_a,
-            keys_b,
-            payload_a,
-            payload_b,
-            internal_mem_buffer,
-            state_buffer: uniform_buffer,
-            bind_group,
-            length,
-        }
-    }
-
     /// Creates all buffers necessary for sorting, using user-provided buffers for keys and values.
     ///
     /// # Arguments
@@ -576,14 +476,15 @@ impl GPUSorter {
     /// # Panics
     ///
     /// This function will panic if the provided buffers are not large enough.
-    pub fn create_sort_buffers_with_user_buffers(
+    pub fn create_sort_buffers <'a>(
         &self,
         device: &wgpu::Device,
         length: NonZeroU32,
-        keys_a: wgpu::Buffer,
-        payload_a: wgpu::Buffer,
-    ) -> SortBuffers {
+        keys_a: &'a wgpu::Buffer,
+        payload_a: &'a wgpu::Buffer,
+    ) -> SortBuffers<'a> {
         let length = length.get();
+
         let count_ru_histo = keys_buffer_size(length) * RS_KEYVAL_SIZE;
 
         // Ensure the user-provided key buffer is large enough
@@ -665,6 +566,53 @@ impl GPUSorter {
             length,
         }
     }
+    
+    /// Get the required length of the keys array for the number of elements to be sorted
+    pub fn get_required_keys_buffer_size(length: u32) -> u32 {
+        let count_ru_histo = keys_buffer_size(length) * RS_KEYVAL_SIZE;
+        count_ru_histo
+    }
+
+    /// Tests if the sorter works. This is needed to guess the subgroup size.
+    pub fn test_sort(&self, wgpu_context: &WgpuContext) -> bool {
+
+        let device = wgpu_context.get_device();
+        let queue = wgpu_context.get_queue();
+
+
+        // simply runs a small sort and check if the sorting result is correct
+        let n = 8192; // means that 2 workgroups are needed for sorting
+        let mut scrambled_data: Vec<u32> = (0..n).rev().collect();
+        let required_len = GPUSorter::get_required_keys_buffer_size(scrambled_data.len() as u32);
+        scrambled_data.resize(required_len as usize, u32::MAX);
+
+
+
+        let mut scrambled_keys_buffer: GpuBuffer<u32> = GpuBuffer::new(wgpu_context, scrambled_data.clone(), wgpu::BufferUsages::STORAGE);
+        let mut scrambled_payload_buffer: GpuBuffer<u32> = GpuBuffer::new(wgpu_context, scrambled_data.clone(), wgpu::BufferUsages::STORAGE);
+
+
+        let sorted_data: Vec<u32> = (0..n).collect();
+
+        let sort_buffers = self.create_sort_buffers(device, NonZeroU32::new(n).unwrap(), scrambled_keys_buffer.buffer(), scrambled_payload_buffer.buffer());
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("GPURSSorter test_sort"),
+        });
+
+
+        self.sort(&mut encoder, queue, &sort_buffers, None);
+        let idx = queue.submit([encoder.finish()]);
+        device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(idx)).unwrap();
+
+        let sorted_keys: Vec<u32> = scrambled_keys_buffer.download(wgpu_context).unwrap().as_slice()[0..n as usize].to_owned();
+        let sorted_payload: Vec<u32> = scrambled_payload_buffer.download(wgpu_context).unwrap().as_slice()[0..n as usize].to_owned();
+
+        sorted_keys.into_iter().zip(sorted_data.clone().into_iter()).all(|(a,b)|a==b) && sorted_payload.into_iter().zip(sorted_data.into_iter()).all(|(a,b)|a==b)
+    }
+    
+    
+    
 }
 
 
@@ -681,14 +629,14 @@ pub struct SorterState {
 
 /// Struct containing all buffers necessary for sorting.
 /// The key and value buffers can be read and written.
-pub struct SortBuffers {
+pub struct SortBuffers<'a> {
     /// keys that are sorted
-    keys_a: wgpu::Buffer,
+    keys_a: &'a wgpu::Buffer,
     /// intermediate key buffer for sorting
     #[allow(dead_code)]
     keys_b: wgpu::Buffer,
     /// value/payload buffer that is sorted
-    payload_a: wgpu::Buffer,
+    payload_a: &'a wgpu::Buffer,
     /// intermediate value buffer for sorting
     #[allow(dead_code)]
     payload_b: wgpu::Buffer,
@@ -707,7 +655,7 @@ pub struct SortBuffers {
     length: u32,
 }
 
-impl SortBuffers {
+impl <'a> SortBuffers<'a> {
     /// number of key-value pairs that can be stored in this buffer
     pub fn len(&self) -> u32 {
         self.length
