@@ -19,12 +19,12 @@ pub struct Grid {
     cell_size: f32,
     world_dimensions: Vec2,
     lines: Option<Lines>,
-    cell_ids: GpuBuffer<u32>, // Indicates the cells an object is in. cell_ids[i..i+3] = cell_id_of_object_i
-    object_ids: GpuBuffer<u32>, // Need this after sorting to indicate the objects in a cell.
+    cell_ids: Rc<RefCell<GpuBuffer<u32>>>, // Indicates the cells an object is in. cell_ids[i..i+3] = cell_id_of_object_i
+    object_ids: Rc<RefCell<GpuBuffer<u32>>>, // Need this after sorting to indicate the objects in a cell.
     build_grid_shader: ComputeShader,
     elements: Rc<RefCell<ParticleSystem>>,
     uniform_buffer: GpuBuffer<UniformData>,
-    //gpu_sorter: GPUSorter,
+    gpu_sorter: GPUSorter,
 }
 
 #[repr(C)]
@@ -58,18 +58,19 @@ impl Grid {
 
         
         
-        let cell_ids = GpuBuffer::new(
+        let cell_ids = Rc::new(RefCell::new(GpuBuffer::new(
             wgpu_context,
             vec![u32::MAX; GPUSorter::get_required_keys_buffer_size(buffer_len as u32) as usize],
-            wgpu::BufferUsages::STORAGE);
-        let object_ids = GpuBuffer::new(
+            wgpu::BufferUsages::STORAGE)));
+        
+        let object_ids = Rc::new(RefCell::new(GpuBuffer::new(
             wgpu_context,
             vec![0; buffer_len],
             wgpu::BufferUsages::STORAGE
-        );
+        )));
 
         
-        //let sorter: GPUSorter = GPUSorter::new(wgpu_context.get_device(), utils::guess_workgroup_size(wgpu_context).unwrap(), NonZeroU32::new(buffer_len as u32).unwrap(), cell_ids.buffer(), object_ids.buffer());
+        let sorter: GPUSorter = GPUSorter::new(wgpu_context.get_device(), utils::guess_workgroup_size(wgpu_context).unwrap(), NonZeroU32::new(buffer_len as u32).unwrap(), cell_ids.clone(), object_ids.clone());
         
         
         let uniform_data = GpuBuffer::new(
@@ -162,11 +163,11 @@ impl Grid {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: cell_ids.buffer().as_entire_binding(),
+                    resource: cell_ids.borrow().buffer().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: object_ids.buffer().as_entire_binding(),
+                    resource: object_ids.borrow().buffer().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
@@ -188,6 +189,7 @@ impl Grid {
             build_grid_shader,
             elements: particle_system,
             uniform_buffer: uniform_data,
+            gpu_sorter: sorter,
         }
     }
 
@@ -243,8 +245,8 @@ impl Grid {
         Self::generate_grid_lines(&mut self.lines, wgpu_context, world_dimensions, cell_size);
 
         let buffer_size = particles_added * 4;
-        self.cell_ids.push_all(&vec![0; buffer_size], wgpu_context);
-        self.object_ids.push_all(&vec![0; buffer_size], wgpu_context);
+        self.cell_ids.borrow_mut().push_all(&vec![0; buffer_size], wgpu_context);
+        self.object_ids.borrow_mut().push_all(&vec![0; buffer_size], wgpu_context);
 
         self.build_grid_shader.update_binding_group(wgpu_context, &[
             wgpu::BindGroupEntry {
@@ -257,11 +259,11 @@ impl Grid {
             },
             wgpu::BindGroupEntry {
                 binding: 2,
-                resource: self.cell_ids.buffer().as_entire_binding(),
+                resource: self.cell_ids.borrow().buffer().as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 3,
-                resource: self.object_ids.buffer().as_entire_binding(),
+                resource: self.object_ids.borrow().buffer().as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 4,
@@ -278,12 +280,12 @@ impl Grid {
         );
     }
 
-    pub fn download_cell_ids(&mut self, wgpu_context: &WgpuContext) ->  Result<&Vec<u32>, BufferAsyncError>{
-        self.cell_ids.download(wgpu_context)
+    pub fn download_cell_ids(&mut self, wgpu_context: &WgpuContext) ->  Result<Vec<u32>, BufferAsyncError>{
+        Ok(self.cell_ids.borrow_mut().download(wgpu_context)?.clone())
     }
 
-    pub fn download_object_ids(&mut self, wgpu_context: &WgpuContext) -> Result<&Vec<u32>, BufferAsyncError> {
-        self.object_ids.download(wgpu_context)
+    pub fn download_object_ids(&mut self, wgpu_context: &WgpuContext) -> Result<Vec<u32>, BufferAsyncError> {
+        Ok(self.object_ids.borrow_mut().download(wgpu_context)?.clone())
     }
 }
 
@@ -316,7 +318,7 @@ impl Renderable for Grid {
         // Step 1: Build the cell IDs array
         self.build_cell_ids(&mut encoder, total_particles);
         
-        //self.gpu_sorter.sort(&mut encoder, wgpu_context.get_queue(), None);
+        self.gpu_sorter.sort(&mut encoder, wgpu_context.get_queue(), None);
 
 
         // Submit the commands to the GPU
