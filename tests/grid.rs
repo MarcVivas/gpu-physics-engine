@@ -90,7 +90,7 @@ fn test_grid_build_cell_ids_with_multiple_particles() {
 
 
     // ASSERT
-    let gpu_cell_ids = grid.download_cell_ids(wgpu_context).unwrap();
+    let gpu_cell_ids = &grid.download_cell_ids(wgpu_context).unwrap().as_slice()[0..expected_cell_ids.len()];
     assert_eq!(*gpu_cell_ids, expected_cell_ids);
     let gpu_object_ids = grid.download_object_ids(wgpu_context).unwrap();
     assert_eq!(*gpu_object_ids, expected_object_ids);

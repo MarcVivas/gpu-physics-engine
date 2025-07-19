@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::num::NonZeroU32;
+use std::rc::Rc;
 use crate::renderer::wgpu_context::WgpuContext;
 use crate::utils::gpu_buffer::GpuBuffer;
 use crate::utils::radix_sort::radix_sort::GPUSorter;
@@ -14,7 +16,7 @@ pub fn guess_workgroup_size(wgpu_context: &WgpuContext) -> Option<u32> {
     let mut current_sorter: GPUSorter;
     let device = wgpu_context.get_device();
     let queue = wgpu_context.get_queue();
-    
+
     log::debug!("Searching for the maximum subgroup size (wgpu currently does not allow to query subgroup sizes)");
 
     let mut best = None;
@@ -26,10 +28,10 @@ pub fn guess_workgroup_size(wgpu_context: &WgpuContext) -> Option<u32> {
         let mut scrambled_data: Vec<u32> = (0..n).rev().collect();
         let required_len = GPUSorter::get_required_keys_buffer_size(scrambled_data.len() as u32);
         scrambled_data.resize(required_len as usize, u32::MAX);
-        let mut scrambled_keys_buffer: GpuBuffer<u32> = GpuBuffer::new(wgpu_context, scrambled_data.clone(), wgpu::BufferUsages::STORAGE);
-        let mut scrambled_payload_buffer: GpuBuffer<u32> = GpuBuffer::new(wgpu_context, scrambled_data.clone(), wgpu::BufferUsages::STORAGE);
-
-        current_sorter = GPUSorter::new(device, subgroup_size, NonZeroU32::new(n).unwrap(), scrambled_keys_buffer.buffer(), scrambled_payload_buffer.buffer());
+        let mut scrambled_keys_buffer = Rc::new(RefCell::new(GpuBuffer::new(wgpu_context, scrambled_data.clone(), wgpu::BufferUsages::STORAGE)));
+        let mut scrambled_payload_buffer = Rc::new(RefCell::new(GpuBuffer::new(wgpu_context, scrambled_data.clone(), wgpu::BufferUsages::STORAGE)));
+    
+        current_sorter = GPUSorter::new(device, subgroup_size, NonZeroU32::new(n).unwrap(), scrambled_keys_buffer.clone(), scrambled_payload_buffer.clone());
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("GPURSSorter test_sort"),
         });
@@ -41,9 +43,9 @@ pub fn guess_workgroup_size(wgpu_context: &WgpuContext) -> Option<u32> {
 
 
         let sorted_data: Vec<u32> = (0..n).collect();
-        
-        let sort_success = scrambled_keys_buffer.download(wgpu_context).unwrap().as_slice()[0..n as usize] == sorted_data &&
-            scrambled_payload_buffer.download(wgpu_context).unwrap().as_slice()[0..n as usize] == sorted_data;
+
+        let sort_success = scrambled_keys_buffer.borrow_mut().download(wgpu_context).unwrap().as_slice()[0..n as usize] == sorted_data &&
+            scrambled_payload_buffer.borrow_mut().download(wgpu_context).unwrap().as_slice()[0..n as usize] == sorted_data;
 
         log::debug!("{} worked: {}", subgroup_size, sort_success);
 

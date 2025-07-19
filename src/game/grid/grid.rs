@@ -24,6 +24,7 @@ pub struct Grid {
     build_grid_shader: ComputeShader,
     elements: Rc<RefCell<ParticleSystem>>,
     uniform_buffer: GpuBuffer<UniformData>,
+    //gpu_sorter: GPUSorter,
 }
 
 #[repr(C)]
@@ -55,9 +56,11 @@ impl Grid {
         let buffer_len = total_particles * 2usize.pow(dim); // A particle can be in 2**dim different cells
         let cell_size = Self::gen_cell_size(max_obj_radius);
 
+        
+        
         let cell_ids = GpuBuffer::new(
             wgpu_context,
-            vec![0; buffer_len],
+            vec![u32::MAX; GPUSorter::get_required_keys_buffer_size(buffer_len as u32) as usize],
             wgpu::BufferUsages::STORAGE);
         let object_ids = GpuBuffer::new(
             wgpu_context,
@@ -65,6 +68,10 @@ impl Grid {
             wgpu::BufferUsages::STORAGE
         );
 
+        
+        //let sorter: GPUSorter = GPUSorter::new(wgpu_context.get_device(), utils::guess_workgroup_size(wgpu_context).unwrap(), NonZeroU32::new(buffer_len as u32).unwrap(), cell_ids.buffer(), object_ids.buffer());
+        
+        
         let uniform_data = GpuBuffer::new(
             wgpu_context,
             vec![UniformData {
@@ -169,15 +176,7 @@ impl Grid {
             (64, 1, 1),
         );
         
-        /*
-        let sorter: GPUSorter = GPUSorter::new(wgpu_context.get_device(), utils::guess_workgroup_size(wgpu_context).unwrap());
-        sorter.create_sort_buffers(
-            wgpu_context.get_device(),
-            NonZeroU32::new(buffer_len as u32).unwrap(),
-            cell_ids.buffer(),
-            object_ids.buffer(),
-        );
-        */
+        
         Grid {
             dim,
             render_grid: false,

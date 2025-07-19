@@ -12,7 +12,8 @@ use std::{
     mem,
     num::{NonZeroU32, NonZeroU64},
 };
-
+use std::cell::RefCell;
+use std::rc::Rc;
 use bytemuck::bytes_of;
 use wgpu::{util::DeviceExt, ComputePassDescriptor};
 use crate::renderer::wgpu_context::WgpuContext;
@@ -59,17 +60,17 @@ const NUM_PASSES: u32 = BYTES_PER_PAYLOAD_ELEM;
 
 
 /// Sorting pipeline. It can be used to sort key-value pairs stored in [SortBuffers]
-pub struct GPUSorter<'a> {
+pub struct GPUSorter {
     zero_p: wgpu::ComputePipeline,
     histogram_p: wgpu::ComputePipeline,
     prefix_p: wgpu::ComputePipeline,
     scatter_even_p: wgpu::ComputePipeline,
     scatter_odd_p: wgpu::ComputePipeline,
-    sorting_buffers: SortBuffers<'a>,
+    sorting_buffers: SortBuffers,
 }
 
-impl <'a> GPUSorter<'a> {
-    pub fn new(device: &wgpu::Device, subgroup_size: u32, length: NonZeroU32, keys: &'a wgpu::Buffer, payload: &'a wgpu::Buffer) -> Self {
+impl GPUSorter {
+    pub fn new(device: &wgpu::Device, subgroup_size: u32, length: NonZeroU32, keys: Rc<RefCell<GpuBuffer<u32>>>, payload: Rc<RefCell<GpuBuffer<u32>>>) -> Self {
         // special variables for scatter shade
         let histogram_sg_size = subgroup_size;
         let rs_sweep_0_size = RS_RADIX_SIZE / histogram_sg_size;
@@ -482,22 +483,22 @@ impl <'a> GPUSorter<'a> {
     fn create_sort_buffers(
         device: &wgpu::Device,
         length: NonZeroU32,
-        keys_a: &'a wgpu::Buffer,
-        payload_a: &'a wgpu::Buffer,
-    ) -> SortBuffers<'a> {
+        keys_a: Rc<RefCell<GpuBuffer<u32>>>,
+        payload_a: Rc<RefCell<GpuBuffer<u32>>>,
+    ) -> SortBuffers {
         let length = length.get();
 
         let count_ru_histo = keys_buffer_size(length) * RS_KEYVAL_SIZE;
 
         // Ensure the user-provided key buffer is large enough
         assert!(
-            keys_a.size() >= (count_ru_histo * BYTES_PER_PAYLOAD_ELEM) as u64,
+            keys_a.borrow().buffer().size() >= (count_ru_histo * BYTES_PER_PAYLOAD_ELEM) as u64,
             "Provided keys buffer is too small."
         );
 
         // Ensure the user-provided payload buffer is large enough
         assert!(
-            payload_a.size() >= (length * BYTES_PER_PAYLOAD_ELEM) as u64,
+            payload_a.borrow().buffer().size() >= (length * BYTES_PER_PAYLOAD_ELEM) as u64,
             "Provided payload buffer is too small."
         );
 
@@ -540,7 +541,7 @@ impl <'a> GPUSorter<'a> {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: keys_a.as_entire_binding(),
+                    resource: keys_a.borrow().buffer().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -548,7 +549,7 @@ impl <'a> GPUSorter<'a> {
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: payload_a.as_entire_binding(),
+                    resource: payload_a.borrow().buffer().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
@@ -594,14 +595,14 @@ pub struct SorterState {
 
 /// Struct containing all buffers necessary for sorting.
 /// The key and value buffers can be read and written.
-pub struct SortBuffers<'a> {
+pub struct SortBuffers {
     /// keys that are sorted
-    keys_a: &'a wgpu::Buffer,
+    keys_a: Rc<RefCell<GpuBuffer<u32>>>,
     /// intermediate key buffer for sorting
     #[allow(dead_code)]
     keys_b: wgpu::Buffer,
     /// value/payload buffer that is sorted
-    payload_a: &'a wgpu::Buffer,
+    payload_a: Rc<RefCell<GpuBuffer<u32>>>,
     /// intermediate value buffer for sorting
     #[allow(dead_code)]
     payload_b: wgpu::Buffer,
@@ -620,19 +621,13 @@ pub struct SortBuffers<'a> {
     length: u32,
 }
 
-impl <'a> SortBuffers<'a> {
+impl SortBuffers {
     /// number of key-value pairs that can be stored in this buffer
     pub fn len(&self) -> u32 {
         self.length
     }
 
-    /// Buffer storing the keys values.
-    ///
-    /// **WARNING**: this buffer has padding bytes at the end
-    ///        use [SortBuffers::keys_valid_size] to get the valid size.
-    pub fn keys(&self) -> &wgpu::Buffer {
-        &self.keys_a
-    }
+ 
 
     /// The keys buffer has padding bytes.
     /// This function returns the number of bytes without padding
@@ -640,10 +635,7 @@ impl <'a> SortBuffers<'a> {
         (self.len() * RS_KEYVAL_SIZE) as u64
     }
 
-    /// Buffer containing the values
-    pub fn values(&self) -> &wgpu::Buffer {
-        &self.payload_a
-    }
+   
 
     /// Buffer containing a [SorterState]
     pub fn state_buffer(&self)->&wgpu::Buffer{
