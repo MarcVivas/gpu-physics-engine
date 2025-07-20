@@ -245,7 +245,7 @@ impl Grid {
         Self::generate_grid_lines(&mut self.lines, wgpu_context, world_dimensions, cell_size);
 
         let buffer_size = particles_added * 4;
-        self.cell_ids.borrow_mut().push_all(&vec![0; buffer_size], wgpu_context);
+        self.cell_ids.borrow_mut().push_all(&vec![0; GPUSorter::get_required_keys_buffer_size(buffer_size as u32) as usize], wgpu_context);
         self.object_ids.borrow_mut().push_all(&vec![0; buffer_size], wgpu_context);
 
         self.build_grid_shader.update_binding_group(wgpu_context, &[
@@ -271,13 +271,24 @@ impl Grid {
             },
         ],
         );
+        
+        self.gpu_sorter.update_sorting_buffers(wgpu_context.get_device(), NonZeroU32::new(self.object_ids.borrow().len() as u32).unwrap(), self.cell_ids.clone(), self.object_ids.clone());
     }
 
+    /// Step 1: Constructs the map of cell ids to objects.
+    /// Key: cell id; Value: Object id
+    /// Each particle would have a max of 4 cell ids (in 2D space)
     pub fn build_cell_ids(&self, encoder: &mut wgpu::CommandEncoder, total_particles: u32){
         self.build_grid_shader.dispatch_by_items(
             encoder,
             (total_particles, 1, 1),
         );
+    }
+
+    /// Step 2: Sorts the map of cell ids to objects by cell id.
+    /// Key: cell id; Value: Object id
+    pub fn sort_map(&self, encoder: &mut wgpu::CommandEncoder, wgpu_context: &WgpuContext){
+        self.gpu_sorter.sort(encoder, wgpu_context.get_queue(), None);
     }
 
     pub fn download_cell_ids(&mut self, wgpu_context: &WgpuContext) ->  Result<Vec<u32>, BufferAsyncError>{
@@ -317,15 +328,15 @@ impl Renderable for Grid {
 
         // Step 1: Build the cell IDs array
         self.build_cell_ids(&mut encoder, total_particles);
-        
-        self.gpu_sorter.sort(&mut encoder, wgpu_context.get_queue(), None);
 
+        // Step 2: Sort the map of cell ids to objects by cell id
+        self.sort_map(&mut encoder, wgpu_context);
 
         // Submit the commands to the GPU
         wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
 
-        //println!("Cell ids{:?}", self.cell_ids.download(wgpu_context).unwrap());
-        //println!("Object ids{:?}", self.object_ids.download(wgpu_context).unwrap());
+        //println!("Cell ids{:?}", &self.cell_ids.borrow_mut().download(wgpu_context).unwrap().as_slice()[0..total_particles as usize * 4usize]);
+        //println!("Object ids{:?}", self.object_ids.borrow_mut().download(wgpu_context).unwrap());
         // self.elements.borrow().instances().download(wgpu_context).unwrap();
         // self.elements.borrow().radius().download(wgpu_context).unwrap();
 

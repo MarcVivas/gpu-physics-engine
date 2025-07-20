@@ -468,6 +468,13 @@ impl GPUSorter {
         self.record_scatter_keys_indirect(bind_group, dispatch_buffer, encoder);
     }
 
+    pub fn update_sorting_buffers(&mut self, device: &wgpu::Device,
+                                  length: NonZeroU32,
+                                  keys_a: Rc<RefCell<GpuBuffer<u32>>>,
+                                  payload_a: Rc<RefCell<GpuBuffer<u32>>>){
+        self.sorting_buffers = Self::create_sort_buffers(device, length, keys_a, payload_a);
+    }
+    
     /// Creates all buffers necessary for sorting, using user-provided buffers for keys and values.
     ///
     /// # Arguments
@@ -641,6 +648,8 @@ impl SortBuffers {
     pub fn state_buffer(&self)->&wgpu::Buffer{
         &self.state_buffer
     }
+    
+ 
 }
 
 fn scatter_blocks_ru(n: u32) -> u32 {
