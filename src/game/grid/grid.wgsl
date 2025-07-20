@@ -19,6 +19,7 @@ struct UniformData {
 @group(0) @binding(3) var<storage, read_write> object_ids: array<u32>;
 @group(0) @binding(4) var<storage, read> radius: array<f32>;
 @group(0) @binding(5) var<storage, read_write> collision_cells: array<u32>;
+@group(0) @binding(6) var<storage, read_write> chunk_obj_count: array<u32>;
 
 
 
@@ -108,8 +109,30 @@ fn is_obj_in_cell(particle_pos: vec2<f32>, particle_sq_radius: f32, cell_coord: 
     return dist_sq < particle_sq_radius;
 }
 
+const CHUNK_SIZE = 4;
+
 @compute @workgroup_size(WORKGROUP_SIZE)
-fn build_collision_cells_array(@builtin(global_invocation_id) global_id: vec3<u32>){
+fn count_objects_for_each_chunk(@builtin(global_invocation_id) global_id: vec3<u32>){
+    let chunk_id = global_id.x;
+
+    let total_chunks = (uniform_data.num_cell_ids - CHUNK_SIZE - 1 ) / CHUNK_SIZE;
+    if chunk_id >= total_chunks{
+        return;
+    }
+
+    // Get the first index of the chunk
+    var first_idx = chunk_id * CHUNK_SIZE;
+
+
+    var obj_count: u32 = 0;
+    // Count the number of obj in each chunk
+    for(var i:u32 = 0; i <= first_idx+CHUNK_SIZE && i <= uniform_data.num_cell_ids; i++){
+
+
+    }
+
+    // Write to memory the number of objects per chunk
+    chunk_obj_count[chunk_id] = obj_count;
 
 }
 

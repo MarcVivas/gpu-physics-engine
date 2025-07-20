@@ -13,6 +13,9 @@ use wgpu::BufferAsyncError;
 use crate::utils;
 use crate::utils::radix_sort::radix_sort::GPUSorter;
 
+
+const CHUNK_SIZE: u32 = 4;
+
 pub struct Grid {
     dim: u32,
     render_grid: bool,
@@ -21,8 +24,9 @@ pub struct Grid {
     lines: Option<Lines>,
     cell_ids: Rc<RefCell<GpuBuffer<u32>>>, // Indicates the cells an object is in. cell_ids[i..i+3] = cell_id_of_object_i
     object_ids: Rc<RefCell<GpuBuffer<u32>>>, // Need this after sorting to indicate the objects in a cell.
+    chunk_counting_buffer: GpuBuffer<u32>, // Stores the number of objects in each chunk.
     collision_cells: GpuBuffer<u32>, // Stores the cells that contain more than one object.
-    build_grid_shader: ComputeShader,
+    build_cell_ids_shader: ComputeShader,
     collision_cells_shader: ComputeShader,
     elements: Rc<RefCell<ParticleSystem>>,
     uniform_buffer: GpuBuffer<UniformData>,
@@ -75,6 +79,14 @@ impl Grid {
             wgpu_context,
             vec![u32::MAX; buffer_len],
             wgpu::BufferUsages::STORAGE,       
+        );
+        
+        let chunk_counting_buffer_len: usize = ((buffer_len as u32 + CHUNK_SIZE-1) / CHUNK_SIZE) as usize;
+        
+        let chunk_counting_buffer = GpuBuffer::new(
+            wgpu_context,
+            vec![0; chunk_counting_buffer_len],
+            wgpu::BufferUsages::STORAGE,      
         );
 
         
@@ -163,6 +175,17 @@ impl Grid {
                     },
                     count: None,
                 },
+                // Chunk counting buffer
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         };
 
@@ -196,6 +219,10 @@ impl Grid {
                     binding: 5,
                     resource: collision_cells.buffer().as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: chunk_counting_buffer.buffer().as_entire_binding(),
+                },
             ],
             (64, 1, 1),
         );
@@ -203,7 +230,7 @@ impl Grid {
         let collision_cells_shader = ComputeShader::new(
             wgpu_context,
             wgpu::include_wgsl!("grid.wgsl"),
-            "build_collision_cells_array",
+            "count_objects_for_each_chunk",
             &compute_bind_group_layout,
             &[
                 wgpu::BindGroupEntry {
@@ -230,6 +257,10 @@ impl Grid {
                     binding: 5,
                     resource: collision_cells.buffer().as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: chunk_counting_buffer.buffer().as_entire_binding(),
+                },
             ],
             (64, 1, 1),
         );
@@ -243,11 +274,12 @@ impl Grid {
             cell_ids,
             object_ids,
             collision_cells,
-            build_grid_shader,
+            build_cell_ids_shader: build_grid_shader,
             collision_cells_shader,           
             elements: particle_system,
             uniform_buffer: uniform_data,
             gpu_sorter: sorter,
+            chunk_counting_buffer,
         }
     }
 
@@ -306,7 +338,7 @@ impl Grid {
         self.cell_ids.borrow_mut().push_all(&vec![0; GPUSorter::get_required_keys_buffer_size(buffer_size as u32) as usize], wgpu_context);
         self.object_ids.borrow_mut().push_all(&vec![0; buffer_size], wgpu_context);
 
-        self.build_grid_shader.update_binding_group(wgpu_context, &[
+        self.build_cell_ids_shader.update_binding_group(wgpu_context, &[
             wgpu::BindGroupEntry {
                 binding: 0,
                 resource: self.elements.borrow().instances().buffer().as_entire_binding(),
@@ -331,6 +363,10 @@ impl Grid {
                 binding: 5,
                 resource: self.collision_cells.buffer().as_entire_binding(),
             },
+            wgpu::BindGroupEntry {
+                binding: 6,
+                resource: self.chunk_counting_buffer.buffer().as_entire_binding(),
+            },
         ],
         );
         
@@ -341,7 +377,7 @@ impl Grid {
     /// Key: cell id; Value: Object id
     /// Each particle would have a max of 4 cell ids (in 2D space)
     pub fn build_cell_ids(&self, encoder: &mut wgpu::CommandEncoder, total_particles: u32){
-        self.build_grid_shader.dispatch_by_items(
+        self.build_cell_ids_shader.dispatch_by_items(
             encoder,
             (total_particles, 1, 1),
         );
@@ -356,7 +392,8 @@ impl Grid {
     /// Step 3: Builds the collision cell list.
     /// Key: cell id; Value: Object id
     /// Collision cells contain more than one object, and therefore they need to be checked for potential collisions 
-    pub fn build_collision_cells(&self, encoder: &mut wgpu::CommandEncoder, num_threads: u32){
+    pub fn build_collision_cells(&self, encoder: &mut wgpu::CommandEncoder){
+        let num_threads = (self.collision_cells.len() as u32 + CHUNK_SIZE - 1) / CHUNK_SIZE;
         self.collision_cells_shader.dispatch_by_items(
             encoder,
             (num_threads, 1, 1),
@@ -405,11 +442,12 @@ impl Renderable for Grid {
         self.sort_map(&mut encoder, wgpu_context);
         
         // Step 3: Build the collision cell list
-        self.build_collision_cells(&mut encoder, total_particles);
+        self.build_collision_cells(&mut encoder);
 
         // Submit the commands to the GPU
         wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
 
+        //println!("{:?}" , self.chunk_counting_buffer.download(wgpu_context).unwrap());
         //println!("Cell ids{:?}", &self.cell_ids.borrow_mut().download(wgpu_context).unwrap().as_slice()[0..total_particles as usize * 4usize]);
         //println!("Object ids{:?}", self.object_ids.borrow_mut().download(wgpu_context).unwrap());
         // self.elements.borrow().instances().download(wgpu_context).unwrap();
