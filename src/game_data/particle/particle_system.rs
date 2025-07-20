@@ -1,7 +1,7 @@
 use std::arch::x86_64::_SIDD_MASKED_NEGATIVE_POLARITY;
 
-use glam::Vec2;
-use rand::Rng;
+use glam::{Vec2, Vec4};
+use rand::{random_range, Rng};
 use crate::{renderer::{camera::Camera, renderable::Renderable}, utils::gpu_buffer::GpuBuffer};
 use crate::renderer::wgpu_context::WgpuContext;
 use crate::utils::compute_shader::ComputeShader;
@@ -39,7 +39,7 @@ impl ParticleSystem {
         let mut ins = Vec::with_capacity(NUM_PARTICLES);
         let mut radiuses = Vec::with_capacity(NUM_PARTICLES);
         let mut vels = Vec::with_capacity(NUM_PARTICLES);
-
+        let mut colors = Vec::with_capacity(NUM_PARTICLES);
 
         let mut max_radius = f32::MIN;
 
@@ -51,6 +51,7 @@ impl ParticleSystem {
             ins.push(Vec2::new(x, y));
             vels.push(Vec2::new(vel_x, vel_y));
             let radius = rng.random_range(1.0..4.0);
+            colors.push(glam::vec4(rng.random_range(0.3..1.0), rng.random_range(0.3..1.0), rng.random_range(0.3..1.0), 1.0));
             if radius > max_radius {
                 max_radius = radius;
             }
@@ -90,6 +91,11 @@ impl ParticleSystem {
                         array_stride: std::mem::size_of::<f32>() as wgpu::BufferAddress,
                         step_mode: wgpu::VertexStepMode::Instance,
                         attributes: &wgpu::vertex_attr_array![2 => Float32],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<Vec4>() as wgpu::BufferAddress,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &wgpu::vertex_attr_array![3 => Float32x4],
                     },
 
                 ],
@@ -145,10 +151,10 @@ impl ParticleSystem {
             instances,
             radius: GpuBuffer::new(wgpu_context, radiuses, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE),
             max_radius,
-            colors: GpuBuffer::new(wgpu_context, vec![glam::vec4(0.1, 0.4, 0.5, 1.0)], wgpu::BufferUsages::VERTEX),
+            colors: GpuBuffer::new(wgpu_context, colors, wgpu::BufferUsages::VERTEX),
             render_pipeline: Some(render_pipeline),
             sim_params_buffer,
-            integration_pass: integration_pass,
+            integration_pass,
         }
     }
 
@@ -171,7 +177,7 @@ impl ParticleSystem {
             colors: GpuBuffer::new(wgpu_context, vec![glam::vec4(0.1, 0.4, 0.5, 1.0)], wgpu::BufferUsages::VERTEX),
             render_pipeline: None,
             sim_params_buffer: GpuBuffer::new(wgpu_context, vec![SimParams { delta_time: 0.0, world_width: 1920.0, world_height: 1080.0, _padding: 0.0 }], wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST),
-            integration_pass: integration_pass,
+            integration_pass,
         }
     }
 
@@ -293,14 +299,19 @@ impl ParticleSystem {
             wgpu_context
         );
         self.velocities.push(
-            Vec2::new(rand::random_range(1.0..10.0), rand::random_range(1.0..10.0)),
+            Vec2::new(random_range(1.0..10.0), rand::random_range(1.0..10.0)),
             wgpu_context
         );
 
-        let rng = rand::random_range(1.0..10.0);
+        let rng = random_range(1.0..10.0);
         self.radius.push(
             rng,
             wgpu_context
+        );
+        
+        self.colors.push(
+            glam::vec4(random_range(0.3..1.0), random_range(0.3..1.0), random_range(0.3..1.0), 1.0),
+            wgpu_context       
         );
 
         self.max_radius = self.max_radius.max(rng);
@@ -331,6 +342,7 @@ impl Renderable for ParticleSystem {
         render_pass.set_index_buffer(self.indices.buffer().slice(..), wgpu::IndexFormat::Uint32);
         render_pass.set_vertex_buffer(1, self.instances.buffer().slice(..));
         render_pass.set_vertex_buffer(2, self.radius.buffer().slice(..));
+        render_pass.set_vertex_buffer(3, self.colors.buffer().slice(..));
 
         render_pass.set_bind_group(0, camera.binding_group(), &[]);
         render_pass.draw_indexed(0..self.indices().len() as u32, 0, 0..self.instances.len() as u32);

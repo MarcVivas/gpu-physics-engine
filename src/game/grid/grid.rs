@@ -21,7 +21,9 @@ pub struct Grid {
     lines: Option<Lines>,
     cell_ids: Rc<RefCell<GpuBuffer<u32>>>, // Indicates the cells an object is in. cell_ids[i..i+3] = cell_id_of_object_i
     object_ids: Rc<RefCell<GpuBuffer<u32>>>, // Need this after sorting to indicate the objects in a cell.
+    collision_cells: GpuBuffer<u32>, // Stores the cells that contain more than one object.
     build_grid_shader: ComputeShader,
+    collision_cells_shader: ComputeShader,
     elements: Rc<RefCell<ParticleSystem>>,
     uniform_buffer: GpuBuffer<UniformData>,
     gpu_sorter: GPUSorter,
@@ -68,6 +70,12 @@ impl Grid {
             vec![0; buffer_len],
             wgpu::BufferUsages::STORAGE
         )));
+        
+        let collision_cells = GpuBuffer::new(
+            wgpu_context,
+            vec![u32::MAX; buffer_len],
+            wgpu::BufferUsages::STORAGE,       
+        );
 
         
         let sorter: GPUSorter = GPUSorter::new(wgpu_context.get_device(), utils::guess_workgroup_size(wgpu_context).unwrap(), NonZeroU32::new(buffer_len as u32).unwrap(), cell_ids.clone(), object_ids.clone());
@@ -144,6 +152,17 @@ impl Grid {
                     },
                     count: None,
                 },
+                // Collision cells
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         };
 
@@ -173,10 +192,47 @@ impl Grid {
                     binding: 4,
                     resource: particle_system.borrow().radius().buffer().as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: collision_cells.buffer().as_entire_binding(),
+                },
             ],
             (64, 1, 1),
         );
         
+        let collision_cells_shader = ComputeShader::new(
+            wgpu_context,
+            wgpu::include_wgsl!("grid.wgsl"),
+            "build_collision_cells_array",
+            &compute_bind_group_layout,
+            &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: particle_system.borrow().instances().buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: uniform_data.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: cell_ids.borrow().buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: object_ids.borrow().buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: particle_system.borrow().radius().buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: collision_cells.buffer().as_entire_binding(),
+                },
+            ],
+            (64, 1, 1),
+        );
         
         Grid {
             dim,
@@ -186,7 +242,9 @@ impl Grid {
             lines: None,
             cell_ids,
             object_ids,
+            collision_cells,
             build_grid_shader,
+            collision_cells_shader,           
             elements: particle_system,
             uniform_buffer: uniform_data,
             gpu_sorter: sorter,
@@ -269,6 +327,10 @@ impl Grid {
                 binding: 4,
                 resource: self.elements.borrow().radius().buffer().as_entire_binding(),
             },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: self.collision_cells.buffer().as_entire_binding(),
+            },
         ],
         );
         
@@ -289,6 +351,16 @@ impl Grid {
     /// Key: cell id; Value: Object id
     pub fn sort_map(&self, encoder: &mut wgpu::CommandEncoder, wgpu_context: &WgpuContext){
         self.gpu_sorter.sort(encoder, wgpu_context.get_queue(), None);
+    }
+    
+    /// Step 3: Builds the collision cell list.
+    /// Key: cell id; Value: Object id
+    /// Collision cells contain more than one object, and therefore they need to be checked for potential collisions 
+    pub fn build_collision_cells(&self, encoder: &mut wgpu::CommandEncoder, num_threads: u32){
+        self.collision_cells_shader.dispatch_by_items(
+            encoder,
+            (num_threads, 1, 1),
+        );
     }
 
     pub fn download_cell_ids(&mut self, wgpu_context: &WgpuContext) ->  Result<Vec<u32>, BufferAsyncError>{
@@ -331,6 +403,9 @@ impl Renderable for Grid {
 
         // Step 2: Sort the map of cell ids to objects by cell id
         self.sort_map(&mut encoder, wgpu_context);
+        
+        // Step 3: Build the collision cell list
+        self.build_collision_cells(&mut encoder, total_particles);
 
         // Submit the commands to the GPU
         wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));

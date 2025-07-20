@@ -18,6 +18,7 @@ struct UniformData {
 @group(0) @binding(2) var<storage, read_write> cell_ids: array<u32>;
 @group(0) @binding(3) var<storage, read_write> object_ids: array<u32>;
 @group(0) @binding(4) var<storage, read> radius: array<f32>;
+@group(0) @binding(5) var<storage, read_write> collision_cells: array<u32>;
 
 
 
@@ -106,3 +107,9 @@ fn is_obj_in_cell(particle_pos: vec2<f32>, particle_sq_radius: f32, cell_coord: 
 
     return dist_sq < particle_sq_radius;
 }
+
+@compute @workgroup_size(WORKGROUP_SIZE)
+fn build_collision_cells_array(@builtin(global_invocation_id) global_id: vec3<u32>){
+
+}
+

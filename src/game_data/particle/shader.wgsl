@@ -67,6 +67,11 @@ struct InstanceInput {
 struct RadiusInput {
     @location(2) radius: f32,
 }
+
+struct ColorInput {
+    @location(3) color: vec4<f32>,
+}
+
 struct Camera {
     view_proj: mat4x4<f32>,
 };
@@ -76,15 +81,15 @@ var<uniform> u_camera: Camera;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) color: vec3<f32>,
+    @location(0) color: vec4<f32>,
     @location(1) local_pos: vec2<f32>,
     @location(2) radius: f32,
 };
 
 @vertex
-fn vs_main(model: VertexInput, instance: InstanceInput, radius: RadiusInput) -> VertexOutput {
+fn vs_main(model: VertexInput, instance: InstanceInput, radius: RadiusInput, color: ColorInput) -> VertexOutput {
     var out: VertexOutput;
-    out.color = vec3<f32>(0.4, 0.3, 0.1);
+    out.color = color.color;
     out.local_pos = model.position;
 
     let scaled_position = model.position * radius.radius;
@@ -110,5 +115,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>{
                     in.radius < 2 // The boolean condition
                 );
 
-    return vec4<f32>(in.color, alpha);
+    return vec4<f32>(in.color.xyz, alpha);
 }
