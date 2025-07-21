@@ -109,13 +109,13 @@ fn is_obj_in_cell(particle_pos: vec2<f32>, particle_sq_radius: f32, cell_coord: 
     return dist_sq < particle_sq_radius;
 }
 
-const CHUNK_SIZE = 4;
+const CHUNK_SIZE: u32 = 4;
 
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn count_objects_for_each_chunk(@builtin(global_invocation_id) global_id: vec3<u32>){
     let chunk_id = global_id.x;
 
-    let total_chunks = (uniform_data.num_cell_ids - CHUNK_SIZE - 1 ) / CHUNK_SIZE;
+    let total_chunks = (uniform_data.num_cell_ids + CHUNK_SIZE - 1 ) / CHUNK_SIZE;
     if chunk_id >= total_chunks{
         return;
     }
@@ -123,12 +123,32 @@ fn count_objects_for_each_chunk(@builtin(global_invocation_id) global_id: vec3<u
     // Get the first index of the chunk
     var first_idx = chunk_id * CHUNK_SIZE;
 
+    // first_idx >= 1 ? cell_ids[first_idx-1] : UNUSED_CELL
+    var prev_cell_id = select(UNUSED_CELL_ID, cell_ids[first_idx - 1], first_idx >= 1);
+
 
     var obj_count: u32 = 0;
+    var currently_counting_cell:u32 =  UNUSED_CELL_ID;
+
+    let next_chunk_first_idx = first_idx+CHUNK_SIZE;
+
     // Count the number of obj in each chunk
-    for(var i:u32 = 0; i <= first_idx+CHUNK_SIZE && i <= uniform_data.num_cell_ids; i++){
+    for(var i:u32 = first_idx; i < uniform_data.num_cell_ids; i++){
+        // Get the current cell
+        let cell_id = cell_ids[i];
 
+        // Exit contition
+        if (cell_id != prev_cell_id && i >= next_chunk_first_idx) || cell_id == UNUSED_CELL_ID || (obj_count == 0 && i >= next_chunk_first_idx) { break; }
 
+        // Counting condition
+        if cell_id != prev_cell_id || currently_counting_cell == cell_id || i == 0 {
+            // Transition
+            currently_counting_cell = cell_id;
+            obj_count += 1;
+        }
+
+        // Update the previous cell id
+        prev_cell_id = cell_id;
     }
 
     // Write to memory the number of objects per chunk
