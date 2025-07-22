@@ -12,7 +12,7 @@ use std::rc::Rc;
 use wgpu::{BindGroupLayout, BufferAsyncError};
 use crate::utils;
 use crate::utils::radix_sort::radix_sort::GPUSorter;
-
+use crate::utils::prefix_sum::prefix_sum::PrefixSum;
 
 const COUNTING_CHUNK_SIZE: u32 = 4;
 const WORKGROUP_SIZE: (u32, u32, u32) = (64, 1, 1);
@@ -36,6 +36,7 @@ struct GridKernels {
     build_cell_ids_shader: ComputeShader,
     collision_cells_shader: ComputeShader,
     gpu_sorter: GPUSorter,
+    prefix_sum: PrefixSum,
 }
 
 impl GridKernels {
@@ -255,6 +256,8 @@ impl Grid {
             WORKGROUP_SIZE,
         );
         
+        let prefix_sum = PrefixSum::new(wgpu_context, &chunk_counting_buffer);
+        
         Grid {
             dim,
             render_grid: false,
@@ -267,7 +270,7 @@ impl Grid {
             elements: particle_system.clone(),
             uniform_buffer: uniform_data,
             chunk_counting_buffer,
-            grid_kernels: GridKernels{build_cell_ids_shader: build_grid_shader, collision_cells_shader, gpu_sorter: sorter},
+            grid_kernels: GridKernels{build_cell_ids_shader: build_grid_shader, collision_cells_shader, gpu_sorter: sorter, prefix_sum },
         }
     }
 
@@ -378,6 +381,7 @@ impl Grid {
         self.grid_kernels.build_cell_ids_shader.update_binding_group(wgpu_context, binding_group.clone());
         self.grid_kernels.collision_cells_shader.update_binding_group(wgpu_context, binding_group);
         self.grid_kernels.gpu_sorter.update_sorting_buffers(wgpu_context.get_device(), NonZeroU32::new(self.object_ids.borrow().len() as u32).unwrap(), self.cell_ids.clone(), self.object_ids.clone());
+        self.grid_kernels.prefix_sum.update_buffers(wgpu_context, &self.chunk_counting_buffer);
     }
 
     /// Step 1: Constructs the map of cell ids to objects.
@@ -456,14 +460,16 @@ impl Renderable for Grid {
         // Step 3: Build the collision cell list
         // Step 3.1 Count the number of objects in each chunk
         self.count_objects_for_each_chunk(&mut encoder);
+        
         // Step 3.2 Prefix sum the number of objects in each chunk
-
+        self.grid_kernels.prefix_sum.execute(&mut encoder, self.chunk_counting_buffer.len() as u32);
+        
         // Step 3.3 Build the collision cell list
 
         // Submit the commands to the GPU
         wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
 
-        //println!("{:?}" , self.chunk_counting_buffer.download(wgpu_context).unwrap());
+        println!("{:?}" , self.chunk_counting_buffer.download(wgpu_context).unwrap());
         //println!("Cell ids{:?}", &self.cell_ids.borrow_mut().download(wgpu_context).unwrap().as_slice()[0..total_particles as usize * 4usize]);
         //println!("Object ids{:?}", self.object_ids.borrow_mut().download(wgpu_context).unwrap());
         // self.elements.borrow().instances().download(wgpu_context).unwrap();

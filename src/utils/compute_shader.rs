@@ -93,7 +93,7 @@ impl ComputeShader {
     pub fn update_binding_group(&mut self, wgpu_context: &WgpuContext, bind_group: wgpu::BindGroup) {
         self.bind_group = bind_group;
     }
-    
+
     pub fn get_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
         &self.bind_group_layout
     }
