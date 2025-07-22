@@ -6,6 +6,7 @@ use crate::{renderer::{camera::Camera, renderable::Renderable}, utils::gpu_buffe
 use crate::renderer::wgpu_context::WgpuContext;
 use crate::utils::compute_shader::ComputeShader;
 
+const WORKGROUP_SIZE: (u32, u32, u32) = (64, 1, 1);
 pub struct ParticleSystem {
     vertices: GpuBuffer<Vec2>,
     indices: GpuBuffer<u32>,
@@ -243,26 +244,37 @@ impl ParticleSystem {
             ],
         };
 
+        let bind_group_layout = wgpu_context.get_device().create_bind_group_layout(&compute_bind_group_layout);
+
+        // Create bind group
+        let bind_group = wgpu_context.get_device().create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: sim_params_buffer.buffer().as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: particle_positions.buffer().as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: velocities.buffer().as_entire_binding(),
+                    },
+                ],
+            }
+        );
+        
         ComputeShader::new(
             wgpu_context,
             wgpu::include_wgsl!("shader.wgsl"),
             "cs_main", // Assuming you rename cs_main to be more specific
-            &compute_bind_group_layout,
-            &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: sim_params_buffer.buffer().as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: particle_positions.buffer().as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: velocities.buffer().as_entire_binding(),
-                },
-            ],
-            (64, 1, 1), // The workgroup size from your WGSL
+            bind_group,
+            bind_group_layout,
+            WORKGROUP_SIZE, // The workgroup size from your WGSL
         )
     }
     pub fn len(&self) -> usize {
@@ -316,21 +328,26 @@ impl ParticleSystem {
 
         self.max_radius = self.max_radius.max(rng);
 
-        self.integration_pass.update_binding_group(wgpu_context, &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: self.sim_params_buffer.buffer().as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: self.instances.buffer().as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: self.velocities.buffer().as_entire_binding(),
-            },
-        ],
-        );
+        self.integration_pass.update_binding_group(wgpu_context, wgpu_context.get_device().create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                label: None,
+                layout: self.integration_pass.get_bind_group_layout(),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.sim_params_buffer.buffer().as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: self.instances.buffer().as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.velocities.buffer().as_entire_binding(),
+                    },
+                ],
+            }));
+      
 
     }
 }

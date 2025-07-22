@@ -1,5 +1,6 @@
 // in renderer/compute_shader.rs
 
+use wgpu::BindGroup;
 use crate::renderer::wgpu_context::WgpuContext;
 
 pub struct ComputeShader {
@@ -15,14 +16,13 @@ impl ComputeShader {
         wgpu_context: &WgpuContext,
         shader_file: wgpu::ShaderModuleDescriptor,
         entry_point: &str,
-        bind_group_layout_descriptor: &wgpu::BindGroupLayoutDescriptor,
-        bind_group_entries: &[wgpu::BindGroupEntry],
+        bind_group: BindGroup,
+        bind_group_layout: wgpu::BindGroupLayout,
         workgroup_size: (u32, u32, u32),
     ) -> Self {
         let device = wgpu_context.get_device();
         let compute_shader = device.create_shader_module(shader_file);
 
-        let bind_group_layout = device.create_bind_group_layout(bind_group_layout_descriptor);
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some(&format!("Compute Pipeline Layout for {}", entry_point)),
@@ -38,15 +38,7 @@ impl ComputeShader {
             compilation_options: Default::default(),
             cache: None,
         });
-
-        // Create bind group
-        let bind_group = wgpu_context.get_device().create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                label: None,
-                layout: &bind_group_layout,
-                entries: bind_group_entries,
-            }
-        );
+        
 
         Self {
             pipeline,
@@ -98,13 +90,11 @@ impl ComputeShader {
     }
 
     /// A helper function to update the binding group with the given entries.
-    pub fn update_binding_group(&mut self, wgpu_context: &WgpuContext, bind_group_entries: &[wgpu::BindGroupEntry]) {
-        self.bind_group = wgpu_context.get_device().create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                label: None,
-                layout: &self.bind_group_layout,
-                entries: bind_group_entries,
-            }
-        );
+    pub fn update_binding_group(&mut self, wgpu_context: &WgpuContext, bind_group: wgpu::BindGroup) {
+        self.bind_group = bind_group;
+    }
+    
+    pub fn get_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
+        &self.bind_group_layout
     }
 }

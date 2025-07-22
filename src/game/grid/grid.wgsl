@@ -114,8 +114,9 @@ const CHUNK_SIZE: u32 = 4;
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn count_objects_for_each_chunk(@builtin(global_invocation_id) global_id: vec3<u32>){
     let chunk_id = global_id.x;
+    let total_cell_ids = uniform_data.num_particles * MAX_CELLS_PER_OBJECT;
 
-    let total_chunks = (uniform_data.num_cell_ids + CHUNK_SIZE - 1 ) / CHUNK_SIZE;
+    let total_chunks = (total_cell_ids + CHUNK_SIZE - 1 ) / CHUNK_SIZE;
     if chunk_id >= total_chunks{
         return;
     }
@@ -133,7 +134,7 @@ fn count_objects_for_each_chunk(@builtin(global_invocation_id) global_id: vec3<u
     let next_chunk_first_idx = first_idx+CHUNK_SIZE;
 
     // Count the number of obj in each chunk
-    for(var i:u32 = first_idx; i < uniform_data.num_cell_ids; i++){
+    for(var i:u32 = first_idx; i < total_cell_ids; i++){
         // Get the current cell
         let cell_id = cell_ids[i];
 

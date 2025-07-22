@@ -93,7 +93,7 @@ impl State {
                             &self.wgpu_context
                         );
                         let particles_added = self.particles.borrow().instances().len() - prev_num_particles;
-                        self.grid.borrow_mut().reset_grid(&self.wgpu_context, self.renderer.camera(), self.world_size, self.particles.borrow().get_max_radius(), particles_added);
+                        self.grid.borrow_mut().refresh_grid(&self.wgpu_context, self.renderer.camera(), self.world_size, self.particles.borrow().get_max_radius(), particles_added);
                     },
                     (KeyCode::KeyG, true) => {
                         self.grid.borrow_mut().render_grid();
