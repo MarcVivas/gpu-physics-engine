@@ -470,6 +470,7 @@ impl Renderable for Grid {
         wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
 
         println!("{:?}" , self.chunk_counting_buffer.download(wgpu_context).unwrap());
+        self.grid_kernels.prefix_sum.print_buffer(wgpu_context);
         //println!("Cell ids{:?}", &self.cell_ids.borrow_mut().download(wgpu_context).unwrap().as_slice()[0..total_particles as usize * 4usize]);
         //println!("Object ids{:?}", self.object_ids.borrow_mut().download(wgpu_context).unwrap());
         // self.elements.borrow().instances().download(wgpu_context).unwrap();

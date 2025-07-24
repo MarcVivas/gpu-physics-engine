@@ -6,17 +6,23 @@ use crate::renderer::wgpu_context::WgpuContext;
 use crate::utils::compute_shader::ComputeShader;
 use crate::utils::gpu_buffer::GpuBuffer;
 
-const WORKGROUP_SIZE: (u32, u32, u32) = (64, 1, 1);
-
-
+const WORKGROUP_SIZE: (u32, u32, u32) = (256, 1, 1);
+const ELEMS_PER_THREAD: u32 = 2;
+const BLOCK_SIZE: u32 = ELEMS_PER_THREAD * WORKGROUP_SIZE.0;
+const LIMIT: u32 = BLOCK_SIZE * BLOCK_SIZE;
 pub struct PrefixSum {
-    shader: ComputeShader,
+    first_pass: ComputeShader,
+    second_pass: ComputeShader,
+    third_pass: ComputeShader,
     intermediate_buffer: GpuBuffer<u32>,
     uniform_data: GpuBuffer<u32>,
 }
 
 impl PrefixSum {
     pub fn new(wgpu_context: &WgpuContext, buffer: &GpuBuffer<u32>) -> Self {
+        if buffer.len() >= LIMIT as usize {
+            panic!("Buffer too large for prefix sum");
+        }
         let intermediate_buffer = GpuBuffer::new(
             wgpu_context,
             vec![0u32; buffer.len()],
@@ -93,19 +99,39 @@ impl PrefixSum {
             }
         );
         
-        let shader = ComputeShader::new(
+        let first_pass = ComputeShader::new(
             wgpu_context,
             wgpu::include_wgsl!("prefix_sum.wgsl"),
-            "prefix_sum_1",
-            binding_group,
-            binding_group_layout,
+            "prefix_sum_of_each_block",
+            binding_group.clone(),
+            binding_group_layout.clone(),
+            WORKGROUP_SIZE,
+        );
+
+        let second_pass = ComputeShader::new(
+            wgpu_context,
+            wgpu::include_wgsl!("prefix_sum.wgsl"),
+            "prefix_sum_of_the_block_sums",
+            binding_group.clone(),
+            binding_group_layout.clone(),
+            WORKGROUP_SIZE,
+        );
+
+        let third_pass = ComputeShader::new(
+            wgpu_context,
+            wgpu::include_wgsl!("prefix_sum.wgsl"),
+            "add_block_prefix_sums_to_the_buffer",
+            binding_group.clone(),
+            binding_group_layout.clone(),
             WORKGROUP_SIZE,
         );
         
      
         
         Self {
-            shader,    
+            first_pass,  
+            second_pass,
+            third_pass,
             intermediate_buffer,
             uniform_data,
         }
@@ -113,19 +139,37 @@ impl PrefixSum {
     
     /// Does the prefix sum
     pub fn execute(&self, encoder: &mut CommandEncoder, num_items: u32) {
-        self.shader.dispatch_by_items(
+        self.first_pass.dispatch_by_items(
+            encoder,
+            (num_items, 1, 1)
+        );
+        
+        
+        self.second_pass.dispatch_by_items(
+            encoder,
+            ((num_items as f32/BLOCK_SIZE as f32).ceil() as u32, 1, 1)
+        );
+        
+        self.third_pass.dispatch_by_items(
             encoder,
             (num_items, 1, 1)
         );
         
     }
+    
+    pub fn print_buffer(&mut self, wgpu_context: &WgpuContext){
+        println!("{:?}", self.intermediate_buffer.download(wgpu_context));
+        
+    }
 
     /// Update buffers when resizing the buffer
     pub fn update_buffers(&mut self, wgpu_context: &WgpuContext, buffer: &GpuBuffer<u32>) {
-        let binding_group_layout = self.shader.get_bind_group_layout();
+        let binding_group_layout = self.first_pass.get_bind_group_layout();
         
         let new_len: u32 = buffer.len() as u32;
         self.uniform_data.replace_elem(new_len, 0, wgpu_context);
+        
+        self.intermediate_buffer.push_all(&vec![0u32; buffer.len()-self.intermediate_buffer.len()], wgpu_context);
         
         let binding_group = wgpu_context.get_device().create_bind_group(
             &wgpu::BindGroupDescriptor {
@@ -148,7 +192,17 @@ impl PrefixSum {
             }
         );
         
-        self.shader.update_binding_group(
+        self.first_pass.update_binding_group(
+            wgpu_context,
+            binding_group.clone()
+        );
+        
+        self.second_pass.update_binding_group(
+            wgpu_context,
+            binding_group.clone()
+        );
+        
+        self.third_pass.update_binding_group(
             wgpu_context,
             binding_group
         );
