@@ -130,22 +130,38 @@ fn count_objects_for_each_chunk(@builtin(global_invocation_id) global_id: vec3<u
 
     var obj_count: u32 = 0;
     var currently_counting_cell:u32 =  UNUSED_CELL_ID;
+    var current_count: u32 = 0;
 
     let next_chunk_first_idx = first_idx+CHUNK_SIZE;
 
-    // Count the number of obj in each chunk
-    for(var i:u32 = first_idx; i < total_cell_ids; i++){
+    // Count the number of obj in each chunk that share the same cell id
+    for(var i: u32 = first_idx; i < total_cell_ids; i++){
         // Get the current cell
         let cell_id = cell_ids[i];
 
-        // Exit contition
-        if (cell_id != prev_cell_id && i >= next_chunk_first_idx) || cell_id == UNUSED_CELL_ID || (obj_count == 0 && i >= next_chunk_first_idx) { break; }
+        // Exit contitions
+        let is_out_of_bounds: bool = i >= next_chunk_first_idx;
+        let is_cell_unused: bool = cell_id == UNUSED_CELL_ID;
+        let is_it_a_transition: bool = cell_id != prev_cell_id;
+        if (is_it_a_transition && is_out_of_bounds) || is_cell_unused || (current_count == 0 && is_out_of_bounds && !is_it_a_transition) { break; }
 
         // Counting condition
-        if cell_id != prev_cell_id || currently_counting_cell == cell_id || i == 0 {
-            // Transition
-            currently_counting_cell = cell_id;
+        let cell_was_seen_before: bool = currently_counting_cell == cell_id;
+        if cell_was_seen_before {
+            // The cell has more than one object inside
+            // Therefore, the objects that are in this cell have to be counted by the thread.
+            if current_count == 1 {
+                obj_count+=1;
+            }
+            current_count += 1;
             obj_count += 1;
+        }
+
+        if cell_id != prev_cell_id {
+            // Transition
+            // Reset the current counter
+            current_count = 1;
+            currently_counting_cell = cell_id;
         }
 
         // Update the previous cell id
@@ -154,6 +170,11 @@ fn count_objects_for_each_chunk(@builtin(global_invocation_id) global_id: vec3<u
 
     // Write to memory the number of objects per chunk
     chunk_obj_count[chunk_id] = obj_count;
+
+}
+
+@compute @workgroup_size(WORKGROUP_SIZE)
+fn build_collision_cells_array(@builtin(global_invocation_id) global_id: vec3<u32>){
 
 }
 
