@@ -116,7 +116,7 @@ fn count_objects_for_each_chunk(@builtin(global_invocation_id) global_id: vec3<u
     let chunk_id = global_id.x;
     let total_cell_ids = uniform_data.num_particles * MAX_CELLS_PER_OBJECT;
 
-    let total_chunks = (total_cell_ids + CHUNK_SIZE - 1 ) / CHUNK_SIZE;
+    let total_chunks = get_total_chunks(total_cell_ids);
     if chunk_id >= total_chunks{
         return;
     }
@@ -173,8 +173,90 @@ fn count_objects_for_each_chunk(@builtin(global_invocation_id) global_id: vec3<u
 
 }
 
+fn get_total_chunks(total_cell_ids: u32) -> u32 {
+    return (total_cell_ids + CHUNK_SIZE - 1 ) / CHUNK_SIZE;
+}
+
+
+fn get_val_from_prefix_sum(index: i32) -> u32 {
+    return select(0u, chunk_obj_count[index], index >= 0);
+}
+
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn build_collision_cells_array(@builtin(global_invocation_id) global_id: vec3<u32>){
+    let total_cell_ids = uniform_data.num_particles * MAX_CELLS_PER_OBJECT;
+
+    let chunk_id: u32 = global_id.x;
+
+    if global_id.x >= get_total_chunks(total_cell_ids) {
+        return;
+    }
+
+    let start_index = get_val_from_prefix_sum(i32(chunk_id) - 1);
+    let end_index = get_val_from_prefix_sum(i32(chunk_id));
+    let num_objects_to_manage = end_index - start_index;
+
+    // Determine if this thread has to work with the Prefix sum
+    let has_work_to_do: bool = num_objects_to_manage > 0;
+    if !has_work_to_do {
+        return;
+    }
+
+    // This thread has work to do
+    // Create collision cells for every object that shares a cell id in the chunk
+    // Get the first index of the chunk
+    var first_idx = chunk_id * CHUNK_SIZE;
+
+    // first_idx >= 1 ? cell_ids[first_idx-1] : UNUSED_CELL
+    var prev_cell_id = select(UNUSED_CELL_ID, cell_ids[first_idx - 1], first_idx >= 1);
+
+
+    var obj_count: u32 = 0;
+    var currently_counting_cell:u32 =  UNUSED_CELL_ID;
+    var current_count: u32 = 0;
+
+    let next_chunk_first_idx = first_idx+CHUNK_SIZE;
+
+    var write_index = start_index; 
+    
+    // Count the number of obj in each chunk that share the same cell id
+    for(var i: u32 = first_idx; i < total_cell_ids && write_index != end_index; i++){
+        // Get the current cell
+        let cell_id = cell_ids[i];
+
+        // Exit contitions
+        let is_out_of_bounds: bool = i >= next_chunk_first_idx;
+        let is_cell_unused: bool = cell_id == UNUSED_CELL_ID;
+        let is_it_a_transition: bool = cell_id != prev_cell_id;
+        if (is_it_a_transition && is_out_of_bounds) || is_cell_unused || (current_count == 0 && is_out_of_bounds && !is_it_a_transition) { break; }
+
+        // Counting condition
+        let cell_was_seen_before: bool = currently_counting_cell == cell_id;
+        if cell_was_seen_before {
+            // The cell has more than one object inside
+            // Therefore, the objects that are in this cell have to be counted by the thread.
+            if current_count == 1 {
+                // The previous obj shared the same cell id
+                // Store it
+                collision_cells[write_index] = i - 1;
+                write_index++; 
+            }
+            // Store the current object
+            collision_cells[write_index] = i;
+            write_index++;
+            current_count += 1;
+        }
+
+        if cell_id != prev_cell_id {
+            // Transition
+            // Reset the current counter
+            current_count = 1;
+            currently_counting_cell = cell_id;
+        }
+
+        // Update the previous cell id
+        prev_cell_id = cell_id;
+    }
 
 }
 

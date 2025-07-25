@@ -4,6 +4,7 @@ use game_engine::game::grid::grid::Grid;
 use glam::Vec2;
 use std::rc::Rc;
 use std::cell::RefCell;
+use wasm_bindgen_futures::js_sys::Math::exp;
 use game_engine::renderer::renderable::Renderable;
 use game_engine::renderer::wgpu_context::WgpuContext;
 
@@ -166,4 +167,98 @@ pub fn test_grid_build_cell_ids_and_sort(){
     let sorted_result = gpu_cell_ids.iter().zip(gpu_object_ids.iter()).map(|(&cell_id, &object_id)| (cell_id, object_id)).collect::<Vec<(u32, u32)>>();    
     assert_eq!(sorted_result, expected);
     
+}
+
+
+
+
+#[test]
+pub fn test_grid_build_cell_ids_sort_and_build_empty_collision_cells_list(){
+    // SETUP
+    let setup = pollster::block_on(common::setup());
+    let wgpu_context = &setup.wgpu_context;
+    let (mut grid, num_particles) = build_grid_case_1(wgpu_context);
+
+    let mut encoder = wgpu_context.get_device().create_command_encoder(
+        &wgpu::CommandEncoderDescriptor { label: Some("Multi-Particle Test Encoder") }
+    );
+
+    grid.build_cell_ids(&mut encoder, num_particles);
+    grid.sort_map(&mut encoder, wgpu_context);
+    grid.build_collision_cells(&mut encoder);
+
+    wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
+
+    let expected_collision_cells: Vec<u32> = vec![UNUSED_CELL_ID; grid.download_object_ids(wgpu_context).unwrap().len()];
+    let actual_collision_cells = grid.download_collision_cells(wgpu_context).unwrap();
+
+    assert_eq!(actual_collision_cells, expected_collision_cells);
+
+}
+
+
+fn build_grid_case_2(wgpu_context: &WgpuContext, positions: Vec<Vec2>) -> (Grid, u32) {
+    // ARRANGE
+    let world_dimensions = Vec2::new(200.0, 200.0);
+    let max_radius = 10.0; // This implicitly sets cell_size to 22.0
+
+
+    let num_particles = positions.len();
+
+    // Give each particle a different radius to ensure the radius buffer is read correctly.
+    let particle_radii = vec![10.0; num_particles];
+
+    let particle_system = common::create_test_particle_system(
+        wgpu_context,
+        positions,
+        particle_radii,
+    );
+
+    (
+        Grid::new_without_camera(
+        wgpu_context,
+        world_dimensions,
+        max_radius,
+        Rc::new(RefCell::new(particle_system)),
+        )
+        , num_particles as u32
+    )
+}
+
+fn gen_case_2_particles() -> Vec<Vec2> {
+    // 546 particles at the same position and therefore, cells
+     vec![
+        // Particle 0: Crosses into 3 neighbors.
+        Vec2::new(20.0, 42.0);
+        546
+        
+    ]
+}
+#[test]
+pub fn test_grid_build_cell_ids_sort_and_build_collision_cells_list(){
+    // SETUP
+    let setup = pollster::block_on(common::setup());
+    let wgpu_context = &setup.wgpu_context;
+
+
+    let positions = gen_case_2_particles();
+    let (mut grid, num_particles) = build_grid_case_2(wgpu_context, positions.clone());
+
+    let mut encoder = wgpu_context.get_device().create_command_encoder(
+        &wgpu::CommandEncoderDescriptor { label: Some("Multi-Particle Test Encoder") }
+    );
+
+    grid.build_cell_ids(&mut encoder, num_particles);
+    grid.sort_map(&mut encoder, wgpu_context);
+    grid.build_collision_cells(&mut encoder);
+
+    wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
+
+
+    let mut expected_collision_cells: Vec<u32> = (0..positions.len() *4).map(|i| i as u32).collect();
+    expected_collision_cells.resize(grid.download_object_ids(wgpu_context).unwrap().len(), UNUSED_CELL_ID);
+    let actual_collision_cells = grid.download_collision_cells(wgpu_context).unwrap();
+
+    assert_eq!(actual_collision_cells, expected_collision_cells);
+
 }

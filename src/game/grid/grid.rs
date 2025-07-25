@@ -418,7 +418,7 @@ impl Grid {
     /// Collision cells are cells that contain more than one object, and therefore they need to be checked for potential collisions 
     pub fn build_collision_cells(&self, encoder: &mut wgpu::CommandEncoder){
         // Step 3.1 Count the number of objects in each chunk that share the same cell id
-        let num_chunks = (self.collision_cells.len() as u32 + COUNTING_CHUNK_SIZE - 1) / COUNTING_CHUNK_SIZE;
+        let num_chunks = self.get_num_counting_chunks();
         self.grid_kernels.count_objects_per_chunk_shader.dispatch_by_items(
             encoder,
             (num_chunks, 1, 1),
@@ -437,6 +437,14 @@ impl Grid {
 
     pub fn download_object_ids(&mut self, wgpu_context: &WgpuContext) -> Result<Vec<u32>, BufferAsyncError> {
         Ok(self.object_ids.borrow_mut().download(wgpu_context)?.clone())
+    }
+
+    pub fn download_collision_cells(&mut self, wgpu_context: &WgpuContext) -> Result<Vec<u32>, BufferAsyncError> {
+        Ok(self.collision_cells.download(wgpu_context)?.clone())
+    }
+    
+    pub fn get_num_counting_chunks(&self) -> u32 {
+        (self.collision_cells.len() as u32 + COUNTING_CHUNK_SIZE - 1) / COUNTING_CHUNK_SIZE
     }
 }
 
@@ -474,11 +482,14 @@ impl Renderable for Grid {
         
         // Step 3: Build the collision cell list
         self.build_collision_cells(&mut encoder);
+        
+        // Step 4: Perform the collision check and solution
 
         // Submit the commands to the GPU
         wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
 
         println!("{:?}" , self.chunk_counting_buffer.download(wgpu_context).unwrap());
+        println!("{:?}" , self.collision_cells.download(wgpu_context).unwrap());
         //println!("Cell ids{:?}", &self.cell_ids.borrow_mut().download(wgpu_context).unwrap().as_slice()[0..total_particles as usize * 4usize]);
         //println!("Object ids{:?}", self.object_ids.borrow_mut().download(wgpu_context).unwrap());
         // self.elements.borrow().instances().download(wgpu_context).unwrap();
