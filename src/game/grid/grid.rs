@@ -417,7 +417,7 @@ impl Grid {
     /// Key: cell id; Value: Object id
     /// Collision cells are cells that contain more than one object, and therefore they need to be checked for potential collisions 
     pub fn build_collision_cells(&self, encoder: &mut wgpu::CommandEncoder){
-        // Step 3.1 Count the number of object in each chunk that share the same cell id
+        // Step 3.1 Count the number of objects in each chunk that share the same cell id
         let num_chunks = (self.collision_cells.len() as u32 + COUNTING_CHUNK_SIZE - 1) / COUNTING_CHUNK_SIZE;
         self.grid_kernels.count_objects_per_chunk_shader.dispatch_by_items(
             encoder,

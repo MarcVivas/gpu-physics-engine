@@ -3,6 +3,7 @@
 const WORKGROUP_SIZE = 256u;
 const ELEMENTS_PER_THREAD = 2u;
 const BLOCK_ELEMENTS = (WORKGROUP_SIZE * ELEMENTS_PER_THREAD);
+const WORKGROUPS_PER_BLOCK = BLOCK_ELEMENTS / WORKGROUP_SIZE;
 
 var<workgroup> shared_data: array<u32, BLOCK_ELEMENTS>;
 
@@ -157,19 +158,27 @@ fn prefix_sum_of_the_block_sums(
      block_sums[value_2_idx] = shared_data[local_id.x + WORKGROUP_SIZE] + value_2;
 }
 
+var<workgroup> previous_block_sum: u32;
 
 /// Third pass
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn add_block_prefix_sums_to_the_buffer(
     @builtin(global_invocation_id) global_id: vec3<u32>,
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
+    @builtin(local_invocation_id) local_id: vec3<u32>,
 ){
     if global_id.x >= num_elems {return;} // Out of bounds
 
-    let block_id = global_id.x / BLOCK_ELEMENTS;
-    if block_id == 0 {return;} // No need to compute the first block
+    let block_id = workgroup_id.x / WORKGROUPS_PER_BLOCK;
 
-    // Write to global memory
-    data[global_id.x] += block_sums[block_id - 1];
+    // No need to compute the first block, as it does not have a preceding block
+    if block_id == 0 {return;}
 
+    // One thread loads the data to be read to shared memory
+    if local_id.x == 0 {
+        previous_block_sum = block_sums[block_id - 1];
+    }
+    workgroupBarrier();
+
+    data[global_id.x] += previous_block_sum;
 }
