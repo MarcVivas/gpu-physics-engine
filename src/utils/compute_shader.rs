@@ -88,6 +88,18 @@ impl ComputeShader {
             (dispatch_x, dispatch_y, dispatch_z)
         );
     }
+    
+    pub fn indirect_dispatch(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        indirect_buffer: &wgpu::Buffer,
+        indirect_offset: u64,
+    ) {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("Solve Pass"), timestamp_writes: None });
+        compute_pass.set_pipeline(&self.pipeline);
+        compute_pass.set_bind_group(0, &self.bind_group, &[]);
+        compute_pass.dispatch_workgroups_indirect(indirect_buffer, indirect_offset);
+    }
 
     /// A helper function to update the binding group with the given entries.
     pub fn update_binding_group(&mut self, wgpu_context: &WgpuContext, bind_group: wgpu::BindGroup) {

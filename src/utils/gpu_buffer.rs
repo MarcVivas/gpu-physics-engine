@@ -178,6 +178,94 @@ impl<T: bytemuck::Pod> GpuBuffer<T>{
         }
     }
 
+    /// Downloads just the last element from the GPU buffer.
+    ///
+    /// This is much more efficient than `download()` if you only need the last value,
+    /// as it avoids copying the entire buffer's contents from the GPU to the CPU.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Some(T))` if the readback was successful and the buffer was not empty.
+    /// - `Ok(None)` if the buffer is empty.
+    /// - `Err(wgpu::BufferAsyncError)` if the buffer mapping fails.
+    pub fn download_last(&self, wgpu_context: &WgpuContext) -> Result<Option<T>, wgpu::BufferAsyncError>
+    {
+        let device = wgpu_context.get_device();
+        let queue = wgpu_context.get_queue();
+
+        let element_size = mem::size_of::<T>() as u64;
+        let num_elements = self.data.len();
+
+        // If the buffer is empty, there is no last element to download.
+        if num_elements == 0 || element_size == 0 {
+            return Ok(None);
+        }
+
+        // 1. Calculate the offset of the last element in the source buffer.
+        // The offset is (number of elements - 1) * size of each element.
+        let source_offset = ((num_elements - 1) * mem::size_of::<T>()) as u64;
+
+        // 2. Create a small staging buffer, just large enough for a single element.
+        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Staging Buffer (Download Last)"),
+            size: element_size, // Size of ONE element.
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // 3. Create a command encoder to queue the copy command.
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Download Last Encoder"),
+        });
+
+        // 4. Command the GPU to copy only the last element.
+        // We provide the source offset and a size of just one element.
+        encoder.copy_buffer_to_buffer(
+            &self.buffer,       // Source GPU buffer
+            source_offset,      // Start reading from here
+            &staging_buffer,    // Destination staging buffer
+            0,                  // Write to the beginning of the staging buffer
+            element_size,       // Copy this many bytes
+        );
+
+        // 5. Submit the command to the queue.
+        queue.submit(Some(encoder.finish()));
+
+        // 6. Map the staging buffer and wait for the result synchronously.
+        let buffer_slice = staging_buffer.slice(..);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            sender.send(result).unwrap();
+        });
+
+        // Poll the device to ensure the GPU work is completed.
+        device.poll(wgpu::MaintainBase::Wait).unwrap();
+
+        // 7. Process the result of the mapping.
+        match receiver.recv().unwrap() {
+            Ok(()) => {
+                // 8. Buffer is mapped. Get a view of its contents.
+                let mapped_range = buffer_slice.get_mapped_range();
+
+                // 9. The data is a slice of bytes. Cast it to a slice of `T`.
+                // This slice will contain exactly one element.
+                let data_slice: &[T] = bytemuck::cast_slice(&mapped_range);
+
+                // 10. Copy the single element out. `T: Copy` makes this easy.
+                let last_element = data_slice[0];
+
+                // 11. Unmap the buffer by dropping the guard.
+                drop(mapped_range);
+
+                Ok(Some(last_element))
+            }
+            Err(e) => {
+                // The mapping failed. Propagate the error.
+                Err(e)
+            }
+        }
+    }
+    
     pub fn replace_elem(&mut self, new_data: T, index: usize, wgpu_context: &WgpuContext) {
         if index >= self.data.len() {
             panic!("Index out of bounds");

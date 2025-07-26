@@ -4,7 +4,6 @@ use game_engine::game::grid::grid::Grid;
 use glam::Vec2;
 use std::rc::Rc;
 use std::cell::RefCell;
-use wasm_bindgen_futures::js_sys::Math::exp;
 use game_engine::renderer::renderable::Renderable;
 use game_engine::renderer::wgpu_context::WgpuContext;
 
@@ -255,7 +254,7 @@ pub fn test_grid_build_cell_ids_sort_and_build_collision_cells_list(){
     wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
 
 
-    let mut expected_collision_cells: Vec<u32> = (0..positions.len() *4).map(|i| i as u32).collect();
+    let mut expected_collision_cells: Vec<u32> = (0..4).map(|i| i * num_particles).collect();
     expected_collision_cells.resize(grid.download_object_ids(wgpu_context).unwrap().len(), UNUSED_CELL_ID);
     let actual_collision_cells = grid.download_collision_cells(wgpu_context).unwrap();
 

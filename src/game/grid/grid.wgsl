@@ -5,11 +5,19 @@ const MAX_CELLS_PER_OBJECT = 4u;
 
 const UNUSED_CELL_ID = 0xffffffffu;
 
+const X_MASK = 0x0000FFFFu;
+
 struct UniformData {
     num_particles: u32,
-    num_cell_ids: u32,
+    num_collision_cells: u32,
     cell_size: f32,
-    dim: u32
+    cell_color: u32,
+};
+
+struct DispatchArgs {
+    x: u32,
+    y: u32,
+    z: u32,
 };
 
 // Bindings for the Compute Shader
@@ -20,7 +28,7 @@ struct UniformData {
 @group(0) @binding(4) var<storage, read> radius: array<f32>;
 @group(0) @binding(5) var<storage, read_write> collision_cells: array<u32>;
 @group(0) @binding(6) var<storage, read_write> chunk_obj_count: array<u32>;
-
+@group(0) @binding(7) var<storage, read_write> indirect_args: DispatchArgs;
 
 
 
@@ -154,7 +162,6 @@ fn count_objects_for_each_chunk(@builtin(global_invocation_id) global_id: vec3<u
                 obj_count+=1;
             }
             current_count += 1;
-            obj_count += 1;
         }
 
         if cell_id != prev_cell_id {
@@ -182,15 +189,36 @@ fn get_val_from_prefix_sum(index: i32) -> u32 {
     return select(0u, chunk_obj_count[index], index >= 0);
 }
 
+fn prepare_dispatch_buffer(){
+
+    // Prepare the dispatch buffer
+    // Read the total count from the last element of the prefix sum buffer
+    let total_items = chunk_obj_count[arrayLength(&chunk_obj_count) - 1u];
+
+    // Calculate workgroups needed
+    let workgroups_x = (total_items + WORKGROUP_SIZE - 1u) / WORKGROUP_SIZE;
+
+    // Write to the indirect buffer
+    indirect_args.x = workgroups_x;
+    indirect_args.y = 1u;
+    indirect_args.z = 1u;
+}
+
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn build_collision_cells_array(@builtin(global_invocation_id) global_id: vec3<u32>){
     let total_cell_ids = uniform_data.num_particles * MAX_CELLS_PER_OBJECT;
 
     let chunk_id: u32 = global_id.x;
 
+    if global_id.x == 0 {
+        prepare_dispatch_buffer();
+    }
+
     if global_id.x >= get_total_chunks(total_cell_ids) {
         return;
     }
+
+
 
     let start_index = get_val_from_prefix_sum(i32(chunk_id) - 1);
     let end_index = get_val_from_prefix_sum(i32(chunk_id));
@@ -237,13 +265,10 @@ fn build_collision_cells_array(@builtin(global_invocation_id) global_id: vec3<u3
             // Therefore, the objects that are in this cell have to be counted by the thread.
             if current_count == 1 {
                 // The previous obj shared the same cell id
-                // Store it
+                // Store the first position of the cell
                 collision_cells[write_index] = i - 1;
                 write_index++; 
             }
-            // Store the current object
-            collision_cells[write_index] = i;
-            write_index++;
             current_count += 1;
         }
 
@@ -256,6 +281,94 @@ fn build_collision_cells_array(@builtin(global_invocation_id) global_id: vec3<u3
 
         // Update the previous cell id
         prev_cell_id = cell_id;
+    }
+
+}
+
+
+fn unhash_cell_id(cell_hash: u32) -> vec2<u32> {
+    let x: u32 = cell_hash & X_MASK;
+    let y: u32 = cell_hash >> 16;
+    return vec2<u32>(x, y);
+
+}
+
+fn get_cell_color(cell_hash: u32) -> u32 {
+    let cell_grid_coords: vec2<u32> = unhash_cell_id(cell_hash);
+    return 1u + (cell_grid_coords.x % 2u) + (cell_grid_coords.y % 2u) * 2u;
+
+}
+
+fn are_colliding(sq_distance: f32, rad_1: f32, rad_2: f32) -> bool {
+    let radius_sum = rad_1 + rad_2;
+    let sq_radius_sum = radius_sum * radius_sum;
+    return sq_radius_sum > sq_distance;
+}
+
+fn resolve_cell_collisons(cell_hash: u32, start: u32) {
+    let total_cell_ids = uniform_data.num_particles * MAX_CELLS_PER_OBJECT;
+
+    for(var i: u32 = start; i < total_cell_ids; i++){
+        if cell_ids[i] != cell_hash {
+            break;
+        }
+        let object_id = object_ids[i];
+
+
+
+        // Check collisions with the current object and the rest of the objects in the cell
+        for(var j: u32 = i + 1; j < total_cell_ids; j++){
+            let other_cell_hash = cell_ids[j];
+
+            // Check if the other object is inside the same cell
+            if other_cell_hash != cell_hash {break;}
+
+            let other_object_id = object_ids[j];
+
+            let obj_1_pos = positions[object_id];
+            let obj_2_pos = positions[other_object_id];
+            let obj_1_radius = radius[object_id];
+            let obj_2_radius = radius[other_object_id];
+
+            let vec_i_j = obj_1_pos - obj_2_pos;
+
+            let distance = length(vec_i_j);
+
+            if are_colliding(distance * distance, obj_1_radius, obj_2_radius) {
+                // Solve collision
+                let penetration_depth = (obj_1_radius + obj_2_radius) - distance;
+                let collision_direction_vector = normalize(vec_i_j);
+
+                // Displace each particle by half of the penetration depth along the collision normal.
+                let displacement = collision_direction_vector * penetration_depth * 0.5;
+                positions[object_id] += displacement;
+                positions[other_object_id] -= displacement;
+            }
+
+        }
+
+    }
+
+}
+
+// Use the collision cells to solve the collisions between objects.
+@compute @workgroup_size(WORKGROUP_SIZE)
+fn solve_collisions(@builtin(global_invocation_id) global_id: vec3<u32>){
+
+    let tid: u32 = global_id.x;
+
+    if tid >= uniform_data.num_collision_cells {
+        // tid is out of bounds
+        return;
+    }
+
+    let start = collision_cells[tid];
+    let cell_hash: u32 = cell_ids[start];
+    let cell_color: u32 = get_cell_color(cell_hash);
+
+    // Only resolve collisions if the cell color matches the current one
+    if cell_color == uniform_data.cell_color {
+        resolve_cell_collisons(cell_hash, start);
     }
 
 }
