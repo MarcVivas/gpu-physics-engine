@@ -184,7 +184,7 @@ pub fn test_grid_build_cell_ids_sort_and_build_empty_collision_cells_list(){
 
     grid.build_cell_ids(&mut encoder, num_particles);
     grid.sort_map(&mut encoder, wgpu_context);
-    grid.build_collision_cells(&mut encoder);
+    grid.build_collision_cells(wgpu_context, &mut encoder);
 
     wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
 
@@ -249,7 +249,7 @@ pub fn test_grid_build_cell_ids_sort_and_build_collision_cells_list(){
 
     grid.build_cell_ids(&mut encoder, num_particles);
     grid.sort_map(&mut encoder, wgpu_context);
-    grid.build_collision_cells(&mut encoder);
+    grid.build_collision_cells(wgpu_context, &mut encoder);
 
     wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
 

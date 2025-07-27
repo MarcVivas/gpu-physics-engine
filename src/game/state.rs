@@ -28,7 +28,7 @@ pub struct State {
 
 impl State {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
-        let world_size = glam::Vec2::new(1920.0, 1080.0);
+        let world_size = Vec2::new(1920.0, 1080.0);
         let wgpu_context = WgpuContext::new(window).await?;
         let mut renderer = Renderer::new(&wgpu_context, &world_size).unwrap();
 
@@ -87,12 +87,12 @@ impl State {
                 match (code, key_state.is_pressed()) {
                     (KeyCode::Escape, true) => event_loop.exit(),
                     (KeyCode::KeyP, true) => {
-                        let prev_num_particles = self.particles.borrow().instances().len();
+                        let prev_num_particles = self.particles.borrow().positions().len();
                         self.particles.borrow_mut().add_particles(
                             &self.renderer.camera().screen_to_world(Vec2::new(self.mouse_position.unwrap().x as f32, self.mouse_position.unwrap().y as f32)),
                             &self.wgpu_context
                         );
-                        let particles_added = self.particles.borrow().instances().len() - prev_num_particles;
+                        let particles_added = self.particles.borrow().positions().len() - prev_num_particles;
                         self.grid.borrow_mut().refresh_grid(&self.wgpu_context, self.renderer.camera(), self.world_size, self.particles.borrow().get_max_radius(), particles_added);
                     },
                     (KeyCode::KeyG, true) => {

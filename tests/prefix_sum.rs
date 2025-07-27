@@ -11,7 +11,7 @@ fn inclusive_prefix_sum_test() {
     let device = wgpu_context.get_device();
     let queue = wgpu_context.get_queue();
 
-    let n = 81920;
+    let n = 81_920;
     let mut original_values: Vec<u32> = (0..n).rev().collect();
 
     let mut buffer_data = GpuBuffer::new(wgpu_context, original_values.clone(), wgpu::BufferUsages::STORAGE);
@@ -27,7 +27,7 @@ fn inclusive_prefix_sum_test() {
         label: Some("Testing prefix sum"),
     });
 
-    prefix_sum.execute(&mut encoder, original_values.len() as u32);
+    prefix_sum.execute(wgpu_context, &mut encoder, original_values.len() as u32);
 
 
     let idx = queue.submit([encoder.finish()]);
@@ -40,6 +40,7 @@ fn inclusive_prefix_sum_test() {
         Some(*sum)
     }).collect();
 
+    assert_eq!(result.len(), expected_data.len());
     assert_eq!(*result, expected_data);
 }
 
@@ -52,13 +53,13 @@ fn inclusive_prefix_sum_same_values_test() {
     let device = wgpu_context.get_device();
     let queue = wgpu_context.get_queue();
 
-    let n = 81920;
+    let n = 83090;
     let mut original_values: Vec<u32> = vec![1; n];
 
     let mut buffer_data = GpuBuffer::new(wgpu_context, original_values.clone(), wgpu::BufferUsages::STORAGE);
 
 
-    let prefix_sum = PrefixSum::new(
+    let mut prefix_sum = PrefixSum::new(
         wgpu_context,
         &buffer_data
     );
@@ -68,7 +69,7 @@ fn inclusive_prefix_sum_same_values_test() {
         label: Some("Testing prefix sum"),
     });
 
-    prefix_sum.execute(&mut encoder, original_values.len() as u32);
+    prefix_sum.execute(wgpu_context, &mut encoder, original_values.len() as u32);
 
 
     let idx = queue.submit([encoder.finish()]);
@@ -81,6 +82,7 @@ fn inclusive_prefix_sum_same_values_test() {
         Some(*sum)
     }).collect();
 
+    assert_eq!(result.len(), expected_data.len());
     assert_eq!(*result, expected_data);
 }
 
@@ -108,7 +110,7 @@ fn inclusive_prefix_sum_all_zero_test() {
         label: Some("Testing prefix sum"),
     });
 
-    prefix_sum.execute(&mut encoder, original_values.len() as u32);
+    prefix_sum.execute(wgpu_context, &mut encoder, original_values.len() as u32);
 
 
     let idx = queue.submit([encoder.finish()]);
@@ -121,6 +123,7 @@ fn inclusive_prefix_sum_all_zero_test() {
         Some(*sum)
     }).collect();
 
+    assert_eq!(result.len(), expected_data.len());
     assert_eq!(*result, expected_data);
 }
 
@@ -133,12 +136,12 @@ fn inclusive_prefix_sum_random_test() {
     let device = wgpu_context.get_device();
     let queue = wgpu_context.get_queue();
 
-    let n = random_range(4096u32..=81920u32);
-    let original_values: Vec<u32> = (0u32..n).map(|_| random_range(0u32..10u32)).collect();
+    let n = random_range(10_381_920u32..=14_381_920u32);
+    let original_values: Vec<u32> = (0u32..n).map(|_| random_range(0u32..=9u32)).collect();
 
     let mut buffer_data = GpuBuffer::new(wgpu_context, original_values.clone(), wgpu::BufferUsages::STORAGE);
 
-    let prefix_sum = PrefixSum::new(
+    let mut prefix_sum = PrefixSum::new(
         wgpu_context,
         &buffer_data
     );
@@ -146,8 +149,9 @@ fn inclusive_prefix_sum_random_test() {
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("Testing random prefix sum"),
     });
+    
 
-    prefix_sum.execute(&mut encoder, original_values.len() as u32);
+    prefix_sum.execute(wgpu_context, &mut encoder, original_values.len() as u32);
 
     let idx = queue.submit([encoder.finish()]);
     device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(idx)).unwrap();
@@ -158,5 +162,6 @@ fn inclusive_prefix_sum_random_test() {
         Some(*sum)
     }).collect();
 
+    assert_eq!(result.len(), expected_data.len());
     assert_eq!(*result, expected_data);
 }

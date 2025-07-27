@@ -228,7 +228,7 @@ impl Grid {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: particle_system.borrow().instances().buffer().as_entire_binding(),
+                        resource: particle_system.borrow().positions().buffer().as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
@@ -371,7 +371,7 @@ impl Grid {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: self.elements.borrow().instances().buffer().as_entire_binding(),
+                        resource: self.elements.borrow().positions().buffer().as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
@@ -452,7 +452,7 @@ impl Grid {
     /// Step 3: Builds the collision cell list.
     /// Key: cell id; Value: Object id
     /// Collision cells are cells that contain more than one object, and therefore they need to be checked for potential collisions 
-    pub fn build_collision_cells(&self, encoder: &mut wgpu::CommandEncoder){
+    pub fn build_collision_cells(&self, wgpu_context: &WgpuContext,  encoder: &mut wgpu::CommandEncoder){
         // Step 3.1 Count the number of objects in each chunk that share the same cell id
         let num_chunks = self.get_num_counting_chunks();
         self.grid_kernels.count_objects_per_chunk_shader.dispatch_by_items(
@@ -461,7 +461,7 @@ impl Grid {
         );
         
         // Step 3.2 Prefix sums the number of objects in each chunk
-        self.grid_kernels.prefix_sum.execute(encoder, self.chunk_counting_buffer.len() as u32);
+        self.grid_kernels.prefix_sum.execute(wgpu_context, encoder, self.chunk_counting_buffer.len() as u32);
 
         // Step 3.3 Build the collision cell list
         self.grid_kernels.build_collision_cells_shader.dispatch_by_items(encoder, (num_chunks, 1, 1));
@@ -629,7 +629,7 @@ impl Renderable for Grid {
         self.sort_map(&mut encoder, wgpu_context);
         
         // Step 3: Build the collision cell list
-        self.build_collision_cells(&mut encoder);
+        self.build_collision_cells(wgpu_context, &mut encoder);
 
 
         

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use wgpu::Adapter;
 use winit::window::Window;
 
 use crate::renderer::surface_manager::SurfaceManager;
@@ -33,16 +34,15 @@ impl WgpuContext {
             }).await?;
 
         let surface_manager: Option<SurfaceManager> = Some(SurfaceManager::new(window, &instance, &adapter));
-                
+
+      
+        
+
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor{
                 label: None,
                 required_features: wgpu::Features::empty(),
-                required_limits: if cfg!(target_arch = "wasm32") {
-                    wgpu::Limits::downlevel_webgl2_defaults()
-                } else {
-                    wgpu::Limits::default()
-                },
+                required_limits: WgpuContext::get_limits(&adapter),
                 memory_hints: Default::default(),
                 trace: wgpu::Trace::Off,
             }).await?;
@@ -56,6 +56,21 @@ impl WgpuContext {
         })
     }
     
+    fn get_limits(adapter: &Adapter) -> wgpu::Limits {
+        let mut limits = wgpu::Limits::default();
+        if cfg!(target_arch = "wasm32") {
+            // When on web, request the browser's supported limits
+            limits = wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits());
+        } else {
+            // For native, use the adapter's reported limits
+            limits = adapter.limits();
+        }
+
+        if limits.max_compute_workgroup_size_x < 1024 {
+            panic!("Your GPU does not support workgroups with 1024 threads.");
+        }
+        limits
+    }
     pub async fn new_for_test() -> anyhow::Result<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let adapter = instance
@@ -72,7 +87,7 @@ impl WgpuContext {
                 &wgpu::DeviceDescriptor {
                     label: Some("Test Device"),
                     required_features: wgpu::Features::empty(), // Add features if your shaders need them
-                    required_limits: wgpu::Limits::default(),
+                    required_limits: WgpuContext::get_limits(&adapter),
                     ..Default::default()
                 },
             )
