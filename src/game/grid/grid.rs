@@ -55,6 +55,7 @@ struct UniformData {
 }
 
 const CELL_SCALING_FACTOR: f32 = 2.2;
+const UNUSED_CELL_ID: u32 = u32::MAX;
 
 impl Grid {
     pub fn new(wgpu_context: &WgpuContext, camera: &Camera, world_dimensions: Vec2, max_obj_radius: f32, particle_system: Rc<RefCell<ParticleSystem>>) -> Grid {
@@ -78,7 +79,7 @@ impl Grid {
         
         let cell_ids = Rc::new(RefCell::new(GpuBuffer::new(
             wgpu_context,
-            vec![u32::MAX; GPUSorter::get_required_keys_buffer_size(buffer_len as u32) as usize],
+            vec![UNUSED_CELL_ID; GPUSorter::get_required_keys_buffer_size(buffer_len as u32) as usize],
             wgpu::BufferUsages::STORAGE)));
         
         let object_ids = Rc::new(RefCell::new(GpuBuffer::new(
@@ -89,7 +90,7 @@ impl Grid {
         
         let collision_cells = GpuBuffer::new(
             wgpu_context,
-            vec![u32::MAX; buffer_len],
+            vec![UNUSED_CELL_ID; buffer_len],
             wgpu::BufferUsages::STORAGE,       
         );
         
@@ -415,10 +416,10 @@ impl Grid {
         Self::generate_grid_lines(&mut self.lines, wgpu_context, world_dimensions, cell_size);
 
         let buffer_size = particles_added * 4;
-        self.cell_ids.borrow_mut().push_all(&vec![0; GPUSorter::get_required_keys_buffer_size(buffer_size as u32) as usize], wgpu_context);
+        self.cell_ids.borrow_mut().push_all(&vec![UNUSED_CELL_ID; GPUSorter::get_required_keys_buffer_size(buffer_size as u32) as usize], wgpu_context);
         self.object_ids.borrow_mut().push_all(&vec![0; buffer_size], wgpu_context);
         self.chunk_counting_buffer.push_all(&vec![0; ((buffer_size as u32 + COUNTING_CHUNK_SIZE - 1) / COUNTING_CHUNK_SIZE) as usize], wgpu_context);
-        self.collision_cells.push_all(&vec![0; buffer_size], wgpu_context);
+        self.collision_cells.push_all(&vec![UNUSED_CELL_ID; buffer_size], wgpu_context);
         
         
         
@@ -468,38 +469,107 @@ impl Grid {
     
     
     /// Step 4: Solves collisions between objects in the same cell.
-    pub fn solve_collisions(&mut self, encoder: &mut wgpu::CommandEncoder, wgpu_context: &WgpuContext){
-        let total_collision_cells_to_solve =  self.get_num_of_collision_cells_to_solve(wgpu_context);
+    pub fn solve_collisions(&mut self, wgpu_context: &WgpuContext){
         
         // Update the uniform if needed
         let old_uniform = self.uniform_buffer.data()[0];
-        if old_uniform.num_collision_cells != total_collision_cells_to_solve {
-            let new_uniform: UniformData = UniformData {
-                num_particles: old_uniform.num_particles,
-                num_collision_cells: total_collision_cells_to_solve,
-                cell_size: old_uniform.cell_size,
-                color: 0u32,
-            };
-            self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
-        }
 
-      
-        
-        for i in 1u32..=4u32 {
+        {
+            let mut encoder = wgpu_context.get_device().create_command_encoder(
+                &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
+            );
+
             let new_uniform: UniformData = UniformData {
                 num_particles: old_uniform.num_particles,
-                num_collision_cells: total_collision_cells_to_solve,
+                num_collision_cells: old_uniform.num_collision_cells,
                 cell_size: old_uniform.cell_size,
-                color: i,
+                color: 1,
             };
             self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
             self.grid_kernels.collision_solver_shader.indirect_dispatch(
-                encoder,
+                &mut encoder,
                 self.indirect_dispatch_buffer.buffer(),
                 0
             );
-            
+
+            wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
+
+
         }
+
+        {
+            let mut encoder = wgpu_context.get_device().create_command_encoder(
+                &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
+            );
+
+            let new_uniform: UniformData = UniformData {
+                num_particles: old_uniform.num_particles,
+                num_collision_cells: old_uniform.num_collision_cells,
+                cell_size: old_uniform.cell_size,
+                color: 2,
+            };
+            self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
+            self.grid_kernels.collision_solver_shader.indirect_dispatch(
+                &mut encoder,
+                self.indirect_dispatch_buffer.buffer(),
+                0
+            );
+
+            wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
+
+
+        }
+
+        {
+            let mut encoder = wgpu_context.get_device().create_command_encoder(
+                &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
+            );
+
+            let new_uniform: UniformData = UniformData {
+                num_particles: old_uniform.num_particles,
+                num_collision_cells: old_uniform.num_collision_cells,
+                cell_size: old_uniform.cell_size,
+                color: 3,
+            };
+            self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
+            self.grid_kernels.collision_solver_shader.indirect_dispatch(
+                &mut encoder,
+                self.indirect_dispatch_buffer.buffer(),
+                0
+            );
+
+            wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
+
+
+        }
+
+        {
+            let mut encoder = wgpu_context.get_device().create_command_encoder(
+                &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
+            );
+
+            let new_uniform: UniformData = UniformData {
+                num_particles: old_uniform.num_particles,
+                num_collision_cells: old_uniform.num_collision_cells,
+                cell_size: old_uniform.cell_size,
+                color: 4,
+            };
+            self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
+            self.grid_kernels.collision_solver_shader.indirect_dispatch(
+                &mut encoder,
+                self.indirect_dispatch_buffer.buffer(),
+                0
+            );
+
+            wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
+
+
+        }
+     
+
+        
+            
+        
 
     }
     /// Returns the number of collision cells to solve.
@@ -562,18 +632,21 @@ impl Renderable for Grid {
         self.build_collision_cells(&mut encoder);
 
 
-        // Step 4: Perform the collision resolution.
-        self.solve_collisions(&mut encoder, wgpu_context);
+        
 
 
         // Submit the commands to the GPU
         wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
 
-        println!("{:?}" , self.chunk_counting_buffer.download(wgpu_context).unwrap());
-        println!("{:?}" , self.collision_cells.download(wgpu_context).unwrap());
-        println!("{:?}" , self.indirect_dispatch_buffer.download(wgpu_context).unwrap());
+
+        // Step 4: Perform the collision resolution.
+        self.solve_collisions(wgpu_context);
         
-        println!("Cell ids{:?}", &self.cell_ids.borrow_mut().download(wgpu_context).unwrap().as_slice()[0..total_particles as usize * 4usize]);
+        //println!("{:?}" , self.chunk_counting_buffer.download(wgpu_context).unwrap());
+        //println!("{:?}" , self.collision_cells.download(wgpu_context).unwrap());
+        //println!("{:?}" , self.indirect_dispatch_buffer.download(wgpu_context).unwrap());
+        
+        //println!("Cell ids{:?}", &self.cell_ids.borrow_mut().download(wgpu_context).unwrap().as_slice()[0..total_particles as usize * 4usize]);
         //println!("Object ids{:?}", self.object_ids.borrow_mut().download(wgpu_context).unwrap());
         // self.elements.borrow().instances().download(wgpu_context).unwrap();
         // self.elements.borrow().radius().download(wgpu_context).unwrap();

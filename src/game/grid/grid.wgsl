@@ -351,13 +351,21 @@ fn resolve_cell_collisons(cell_hash: u32, start: u32) {
 
 }
 
+fn get_number_of_collision_cells() -> u32 {
+    // Read the total count from the last element of the prefix sum buffer
+    return chunk_obj_count[arrayLength(&chunk_obj_count) - 1u];
+
+}
+
 // Use the collision cells to solve the collisions between objects.
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn solve_collisions(@builtin(global_invocation_id) global_id: vec3<u32>){
 
     let tid: u32 = global_id.x;
 
-    if tid >= uniform_data.num_collision_cells {
+
+
+    if tid >= get_number_of_collision_cells() {
         // tid is out of bounds
         return;
     }

@@ -83,7 +83,6 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec4<f32>,
     @location(1) local_pos: vec2<f32>,
-    @location(2) radius: f32,
 };
 
 @vertex
@@ -92,11 +91,10 @@ fn vs_main(model: VertexInput, instance: InstanceInput, radius: RadiusInput, col
     out.color = color.color;
     out.local_pos = model.position;
 
-    let scaled_position = model.position * radius.radius;
+    let scaled_position = model.position * radius.radius * 2.0;
     let world_position = scaled_position + instance.position;
 
     out.clip_position = u_camera.view_proj * vec4<f32>(world_position, 0.0, 1.0);
-    out.radius = radius.radius;
     return out;
 }
 
@@ -109,11 +107,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32>{
     // When dist_sq is <= 0.2304 smoothstep is 0. Thus, alpha = 1 and the pixel is close to the center.
     // When dist_sq is >= 0.25 smoothstep is 1. Thus, alpha = 0 and the pixel is far from the center.
     // When dist_sq is in between 0.2304 0.25, smoothstep is in between 0 and 1. Creates a smooth fading effect
-    let alpha = select(
-                    1.0 - smoothstep(0.2304, 0.25, dist_sq), // This is returned if 'condition' is false
-                    1.0,                                     // This is returned if 'condition' is true
-                    in.radius < 2 // The boolean condition
-                );
+    let alpha = 1.0 - smoothstep(0.2304, 0.25, dist_sq);
 
     return vec4<f32>(in.color.xyz, alpha);
 }

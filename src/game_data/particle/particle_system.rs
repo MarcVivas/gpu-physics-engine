@@ -14,7 +14,7 @@ pub struct ParticleSystem {
     velocities: GpuBuffer<Vec2>,
     radius: GpuBuffer<f32>,
     max_radius: f32,
-    colors: GpuBuffer<glam::Vec4>,
+    colors: GpuBuffer<Vec4>,
     render_pipeline: Option<wgpu::RenderPipeline>,
     sim_params_buffer: GpuBuffer<SimParams>,
     integration_pass: ComputeShader,
@@ -31,7 +31,7 @@ struct SimParams {
 
 impl ParticleSystem {
     pub fn new(wgpu_context: &WgpuContext, camera: &Camera) -> Self {
-        const NUM_PARTICLES: usize = 10;
+        const NUM_PARTICLES: usize = 140000;
         const WORLD_WIDTH: f32 = 1920.0;
         const WORLD_HEIGHT: f32 = 1080.0;
 
@@ -51,8 +51,8 @@ impl ParticleSystem {
             let vel_y = rng.random_range(-50.0..50.0);
             ins.push(Vec2::new(x, y));
             vels.push(Vec2::new(vel_x, vel_y));
-            let radius = rng.random_range(1.0..4.0);
-            colors.push(glam::vec4(rng.random_range(0.3..1.0), rng.random_range(0.3..1.0), rng.random_range(0.3..1.0), 1.0));
+            let radius = rng.random_range(1..=1) as f32;
+            colors.push(glam::vec4(rng.random_range(0.3..0.8), rng.random_range(0.3..0.8), rng.random_range(0.3..0.8), 1.0));
             if radius > max_radius {
                 max_radius = radius;
             }
