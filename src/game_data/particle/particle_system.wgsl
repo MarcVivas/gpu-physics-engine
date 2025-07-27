@@ -9,13 +9,18 @@ struct SimParams {
 @group(0) @binding(0) var<uniform> sim_params: SimParams;
 @group(0) @binding(1) var<storage, read_write> positions: array<vec2<f32>>;
 @group(0) @binding(2) var<storage, read_write> velocities: array<vec2<f32>>;
+@group(0) @binding(3) var<storage, read_write> previous_positions: array<vec2<f32>>;
+@group(0) @binding(4) var<storage, read> radius: array<f32>;
+
 
 // The Compute Shader
 // WORKGROUP_SIZE is the number of threads we run in a block. 
 const WORKGROUP_SIZE: u32 = 64u;
 
+const FORCE_OF_GRAVITY: vec2<f32> = vec2<f32>(0.0, -19.3); 
+
 @compute @workgroup_size(WORKGROUP_SIZE)
-fn cs_main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+fn verlet_integration(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let index = global_id.x;
 
     // Prevent running on more particles than we have
@@ -24,36 +29,35 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         return;
     }
 
-    // Get the current particle's data
-    var pos = positions[index];
-    var vel = velocities[index];
+    // Get the particle's data
+    let current_position = positions[index];
+    let previous_position = previous_positions[index];
 
-    // --- Simulation Logic ---
-    // Update position based on velocity and delta_time
-    pos += vel * sim_params.delta_time;
 
+
+    // Update the previous position
+    // The current position becomes the old position
+    previous_positions[index] = current_position;
+
+
+    // Verlet integration
+    let velocity = current_position - previous_position;
+    velocities[index] = velocity;
+
+    // Predict the next position without applying constraints
+    var predicted_position = current_position + velocity + FORCE_OF_GRAVITY * sim_params.delta_time * sim_params.delta_time;
+
+
+    let particle_radius = radius[index];
+    
+    // Apply boundary constraints
     // Boundary check (bouncing)
-    if (pos.x < 0.0) {
-        pos.x = 0.0;
-        vel.x *= -1.0;
-    }
-    if (pos.x > sim_params.world_width) {
-        pos.x = sim_params.world_width;
-        vel.x *= -1.0;
-    }
-    if (pos.y < 0.0) {
-        pos.y = 0.0;
-        vel.y *= -1.0;
-    }
-    if (pos.y > sim_params.world_height) {
-        pos.y = sim_params.world_height;
-        vel.y *= -1.0;
-    }
-    // --- End Simulation Logic ---
+    predicted_position.x = clamp(predicted_position.x, particle_radius, sim_params.world_width - particle_radius);
+    predicted_position.y = clamp(predicted_position.y, particle_radius, sim_params.world_height - particle_radius);
+
 
     // Write the updated data back to the buffer
-    positions[index] = pos;
-    velocities[index] = vel;
+    positions[index] = predicted_position;
 }
 
 struct VertexInput {

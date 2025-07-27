@@ -10,7 +10,8 @@ const WORKGROUP_SIZE: (u32, u32, u32) = (64, 1, 1);
 pub struct ParticleSystem {
     vertices: GpuBuffer<Vec2>,
     indices: GpuBuffer<u32>,
-    instances: GpuBuffer<Vec2>,
+    current_positions: GpuBuffer<Vec2>,
+    previous_positions: GpuBuffer<Vec2>,
     velocities: GpuBuffer<Vec2>,
     radius: GpuBuffer<f32>,
     max_radius: f32,
@@ -31,13 +32,13 @@ struct SimParams {
 
 impl ParticleSystem {
     pub fn new(wgpu_context: &WgpuContext, camera: &Camera) -> Self {
-        const NUM_PARTICLES: usize = 140000;
+        const NUM_PARTICLES: usize = 25000;
         const WORLD_WIDTH: f32 = 1920.0;
         const WORLD_HEIGHT: f32 = 1080.0;
 
         let mut rng = rand::rng();
 
-        let mut ins = Vec::with_capacity(NUM_PARTICLES);
+        let mut positions = Vec::with_capacity(NUM_PARTICLES);
         let mut radiuses = Vec::with_capacity(NUM_PARTICLES);
         let mut vels = Vec::with_capacity(NUM_PARTICLES);
         let mut colors = Vec::with_capacity(NUM_PARTICLES);
@@ -49,9 +50,9 @@ impl ParticleSystem {
             let y = rng.random_range(0.0..WORLD_HEIGHT);
             let vel_x = rng.random_range(-50.0..50.0); // pixels per second
             let vel_y = rng.random_range(-50.0..50.0);
-            ins.push(Vec2::new(x, y));
+            positions.push(Vec2::new(x, y));
             vels.push(Vec2::new(vel_x, vel_y));
-            let radius = rng.random_range(1..=1) as f32;
+            let radius = rng.random_range(1..=4) as f32;
             colors.push(glam::vec4(rng.random_range(0.3..0.8), rng.random_range(0.3..0.8), rng.random_range(0.3..0.8), 1.0));
             if radius > max_radius {
                 max_radius = radius;
@@ -61,10 +62,11 @@ impl ParticleSystem {
 
 
 
-        let instances = GpuBuffer::new(wgpu_context, ins, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE);
+        let current_positions = GpuBuffer::new(wgpu_context, positions.clone(), wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE);
+        let previous_positions = GpuBuffer::new(wgpu_context, positions, wgpu::BufferUsages::STORAGE);
         let velocities = GpuBuffer::new(wgpu_context, vels, wgpu::BufferUsages::STORAGE);
 
-        let shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
+        let shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("particle_system.wgsl"));
         let render_pipeline_layout = wgpu_context.get_device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
             label: Some("Render Pipeline Layout"),
             bind_group_layouts: &[&camera.camera_bind_group_layout()],
@@ -142,15 +144,17 @@ impl ParticleSystem {
         );
 
 
-
-        let integration_pass = Self::gen_integration_pass(wgpu_context, &velocities, &sim_params_buffer, &instances);
+        let radius = GpuBuffer::new(wgpu_context, radiuses, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE);
+        
+        let integration_pass = Self::gen_integration_pass(wgpu_context, &velocities, &sim_params_buffer, &current_positions, &previous_positions, &radius);
 
         Self {
             vertices: Self::gen_model_vertices(wgpu_context),
             indices: Self::gen_model_indices(wgpu_context),
             velocities,
-            instances,
-            radius: GpuBuffer::new(wgpu_context, radiuses, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE),
+            current_positions,
+            previous_positions,
+            radius,
             max_radius,
             colors: GpuBuffer::new(wgpu_context, colors, wgpu::BufferUsages::VERTEX),
             render_pipeline: Some(render_pipeline),
@@ -159,20 +163,22 @@ impl ParticleSystem {
         }
     }
 
-    pub fn new_from_buffers(wgpu_context: &WgpuContext, positions: GpuBuffer<Vec2>, radii: GpuBuffer<f32>) -> Self {
+    pub fn new_from_buffers(wgpu_context: &WgpuContext, current_positions: GpuBuffer<Vec2>, radii: GpuBuffer<f32>) -> Self {
         let velocities = GpuBuffer::new(
             wgpu_context,
-            vec![Vec2::ZERO; positions.len()],
+            vec![Vec2::ZERO; current_positions.len()],
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST
         );
         let max_radius: f32 = radii.data().iter().max_by(|x, y| x.abs().partial_cmp(&y.abs()).unwrap()).unwrap().clone();
         let sim_params_buffer = GpuBuffer::new(wgpu_context, vec![SimParams { delta_time: 0.0, world_width: 1920.0, world_height: 1080.0, _padding: 0.0 }], wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
-        let integration_pass = Self::gen_integration_pass(wgpu_context, &velocities, &sim_params_buffer, &positions);
+        let previous_positions = GpuBuffer::new(wgpu_context, current_positions.data().clone(), wgpu::BufferUsages::STORAGE);
+        let integration_pass = Self::gen_integration_pass(wgpu_context, &velocities, &sim_params_buffer, &current_positions, &previous_positions, &radii);
         Self {
             vertices: Self::gen_model_vertices(wgpu_context),
             indices: Self::gen_model_indices(wgpu_context),
             velocities,
-            instances: positions,
+            previous_positions,
+            current_positions,
             radius: radii,
             max_radius,
             colors: GpuBuffer::new(wgpu_context, vec![glam::vec4(0.1, 0.4, 0.5, 1.0)], wgpu::BufferUsages::VERTEX),
@@ -202,7 +208,7 @@ impl ParticleSystem {
         ], wgpu::BufferUsages::INDEX)
     }
 
-    fn gen_integration_pass(wgpu_context: &WgpuContext, velocities: &GpuBuffer<Vec2>, sim_params_buffer: &GpuBuffer<SimParams>, particle_positions: &GpuBuffer<Vec2>) -> ComputeShader {
+    fn gen_integration_pass(wgpu_context: &WgpuContext, velocities: &GpuBuffer<Vec2>, sim_params_buffer: &GpuBuffer<SimParams>, particle_positions: &GpuBuffer<Vec2>, previous_positions: &GpuBuffer<Vec2>, radius: &GpuBuffer<f32>) -> ComputeShader {
 
         // This layout describes what the compute shader can access.
         let compute_bind_group_layout = wgpu::BindGroupLayoutDescriptor {
@@ -219,7 +225,7 @@ impl ParticleSystem {
                     },
                     count: None,
                 },
-                // Binding 1: The particle positions
+                // Binding 1: The particle's current positions
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -236,6 +242,28 @@ impl ParticleSystem {
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: false }, // false means read-write
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // Binding 3: The particle's previous positions
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false }, // false means read-write
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // Binding 4: The particle's radius
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true }, 
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -264,24 +292,32 @@ impl ParticleSystem {
                         binding: 2,
                         resource: velocities.buffer().as_entire_binding(),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: previous_positions.buffer().as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: radius.buffer().as_entire_binding(),
+                    },
                 ],
             }
         );
         
         ComputeShader::new(
             wgpu_context,
-            wgpu::include_wgsl!("shader.wgsl"),
-            "cs_main", // Assuming you rename cs_main to be more specific
+            wgpu::include_wgsl!("particle_system.wgsl"),
+            "verlet_integration", 
             bind_group,
             bind_group_layout,
-            WORKGROUP_SIZE, // The workgroup size from your WGSL
+            WORKGROUP_SIZE, 
         )
     }
     pub fn len(&self) -> usize {
-        self.instances.len()
+        self.current_positions.len()
     }
 
-    pub fn vertices(&self) -> &[glam::Vec2] {
+    pub fn vertices(&self) -> &[Vec2] {
         self.vertices.data()
     }
 
@@ -290,14 +326,14 @@ impl ParticleSystem {
     }
 
     pub fn instances(&self) -> &GpuBuffer<Vec2>{
-        &self.instances
+        &self.current_positions
     }
 
     pub fn radius(&self) -> &GpuBuffer<f32> {
         &self.radius
     }
 
-    pub fn color(&self) -> &[glam::Vec4] {
+    pub fn color(&self) -> &[Vec4] {
         self.colors.data()
     }
 
@@ -306,10 +342,16 @@ impl ParticleSystem {
     }
     pub fn add_particles(&mut self, mouse_pos: &Vec2, wgpu_context: &WgpuContext){
 
-        self.instances.push(
+        self.current_positions.push(
             mouse_pos.clone(),
             wgpu_context
         );
+        
+        self.previous_positions.push(
+            mouse_pos.clone(),
+            wgpu_context       
+        );
+        
         self.velocities.push(
             Vec2::new(random_range(1.0..10.0), rand::random_range(1.0..10.0)),
             wgpu_context
@@ -339,11 +381,19 @@ impl ParticleSystem {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: self.instances.buffer().as_entire_binding(),
+                        resource: self.current_positions.buffer().as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
                         resource: self.velocities.buffer().as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: self.previous_positions.buffer().as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: self.radius.buffer().as_entire_binding(),
                     },
                 ],
             }));
@@ -357,12 +407,12 @@ impl Renderable for ParticleSystem {
         render_pass.set_pipeline(self.render_pipeline.as_ref().expect("Render pipeline not set"));
         render_pass.set_vertex_buffer(0, self.vertices.buffer().slice(..));
         render_pass.set_index_buffer(self.indices.buffer().slice(..), wgpu::IndexFormat::Uint32);
-        render_pass.set_vertex_buffer(1, self.instances.buffer().slice(..));
+        render_pass.set_vertex_buffer(1, self.current_positions.buffer().slice(..));
         render_pass.set_vertex_buffer(2, self.radius.buffer().slice(..));
         render_pass.set_vertex_buffer(3, self.colors.buffer().slice(..));
 
         render_pass.set_bind_group(0, camera.binding_group(), &[]);
-        render_pass.draw_indexed(0..self.indices().len() as u32, 0, 0..self.instances.len() as u32);
+        render_pass.draw_indexed(0..self.indices().len() as u32, 0, 0..self.current_positions.len() as u32);
     }
 
     fn update(&mut self, delta_time:f32, world_size:&glam::Vec2, wgpu_context: &WgpuContext) {
@@ -386,7 +436,7 @@ impl Renderable for ParticleSystem {
 
         self.integration_pass.dispatch_by_items(
             &mut encoder,
-            (self.instances.data().len() as u32, 1, 1),
+            (self.current_positions.data().len() as u32, 1, 1),
         );
 
         // Submit the commands to the GPU
