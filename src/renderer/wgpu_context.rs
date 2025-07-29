@@ -57,7 +57,7 @@ impl WgpuContext {
     }
     
     fn get_limits(adapter: &Adapter) -> wgpu::Limits {
-        let mut limits = wgpu::Limits::default();
+        let limits;
         if cfg!(target_arch = "wasm32") {
             // When on web, request the browser's supported limits
             limits = wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits());

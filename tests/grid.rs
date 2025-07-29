@@ -4,7 +4,6 @@ use game_engine::game::grid::grid::Grid;
 use glam::Vec2;
 use std::rc::Rc;
 use std::cell::RefCell;
-use game_engine::renderer::renderable::Renderable;
 use game_engine::renderer::wgpu_context::WgpuContext;
 
 const UNUSED_CELL_ID: u32 = 0xffffffff;
@@ -73,7 +72,6 @@ fn test_grid_build_cell_ids_with_multiple_particles() {
 
 fn build_grid_case_1(wgpu_context: &WgpuContext) -> (Grid, u32) {
     // ARRANGE
-    let world_dimensions = Vec2::new(200.0, 200.0);
     let max_radius = 10.0; // This implicitly sets cell_size to 22.0
 
     let particle_positions = vec![
@@ -97,7 +95,6 @@ fn build_grid_case_1(wgpu_context: &WgpuContext) -> (Grid, u32) {
 
     (Grid::new_without_camera(
         wgpu_context,
-        world_dimensions,
         max_radius,
         Rc::new(RefCell::new(particle_system)),
     ), num_particles as u32)
@@ -198,7 +195,6 @@ pub fn test_grid_build_cell_ids_sort_and_build_empty_collision_cells_list(){
 
 fn build_grid_case_2(wgpu_context: &WgpuContext, positions: Vec<Vec2>) -> (Grid, u32) {
     // ARRANGE
-    let world_dimensions = Vec2::new(200.0, 200.0);
     let max_radius = 10.0; // This implicitly sets cell_size to 22.0
 
 
@@ -216,7 +212,6 @@ fn build_grid_case_2(wgpu_context: &WgpuContext, positions: Vec<Vec2>) -> (Grid,
     (
         Grid::new_without_camera(
         wgpu_context,
-        world_dimensions,
         max_radius,
         Rc::new(RefCell::new(particle_system)),
         )

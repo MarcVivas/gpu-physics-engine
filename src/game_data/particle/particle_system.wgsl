@@ -17,7 +17,7 @@ struct SimParams {
 // WORKGROUP_SIZE is the number of threads we run in a block. 
 const WORKGROUP_SIZE: u32 = 64u;
 
-const FORCE_OF_GRAVITY: vec2<f32> = vec2<f32>(0.0, -19.3); 
+const FORCE_OF_GRAVITY: vec2<f32> = vec2<f32>(0.0, -39.3);
 
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn verlet_integration(@builtin(global_invocation_id) global_id: vec3<u32>) {

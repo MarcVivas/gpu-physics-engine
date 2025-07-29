@@ -1,11 +1,11 @@
 use std::mem;
 use crate::renderer::wgpu_context::{WgpuContext};
-use wgpu::{util::DeviceExt, Buffer, Queue};
+use wgpu::{Buffer};
 
 #[derive(Debug)]
 pub struct GpuBuffer<T> {
     data: Vec<T>,
-    buffer: wgpu::Buffer,
+    buffer: Buffer,
     usage: wgpu::BufferUsages,
 }
 
@@ -26,11 +26,7 @@ impl<T: bytemuck::Pod> GpuBuffer<T>{
 
         Self { data, buffer, usage}
     }
-
-    fn get_capacity_bytes(&self) -> u64 {
-        (self.data.capacity() * size_of::<T>().max(1)) as u64
-    }
-
+    
     pub fn push(&mut self, value: T, wgpu_context: &WgpuContext) {
         self.data.push(value);
         self.upload(wgpu_context, 1usize);

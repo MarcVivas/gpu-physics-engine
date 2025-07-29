@@ -1,4 +1,4 @@
-use rand::{random_range, Rng};
+use rand::{random_range};
 use game_engine::utils::gpu_buffer::GpuBuffer;
 use game_engine::utils::prefix_sum::prefix_sum::PrefixSum;
 
@@ -12,7 +12,7 @@ fn inclusive_prefix_sum_test() {
     let queue = wgpu_context.get_queue();
 
     let n = 81_920;
-    let mut original_values: Vec<u32> = (0..n).rev().collect();
+    let original_values: Vec<u32> = (0..n).rev().collect();
 
     let mut buffer_data = GpuBuffer::new(wgpu_context, original_values.clone(), wgpu::BufferUsages::STORAGE);
 
@@ -54,12 +54,12 @@ fn inclusive_prefix_sum_same_values_test() {
     let queue = wgpu_context.get_queue();
 
     let n = 83090;
-    let mut original_values: Vec<u32> = vec![1; n];
+    let original_values: Vec<u32> = vec![1; n];
 
     let mut buffer_data = GpuBuffer::new(wgpu_context, original_values.clone(), wgpu::BufferUsages::STORAGE);
 
 
-    let mut prefix_sum = PrefixSum::new(
+    let prefix_sum = PrefixSum::new(
         wgpu_context,
         &buffer_data
     );
@@ -95,7 +95,7 @@ fn inclusive_prefix_sum_all_zero_test() {
     let queue = wgpu_context.get_queue();
 
     let n = 81920;
-    let mut original_values: Vec<u32> = vec![0; n];
+    let original_values: Vec<u32> = vec![0; n];
 
     let mut buffer_data = GpuBuffer::new(wgpu_context, original_values.clone(), wgpu::BufferUsages::STORAGE);
 
@@ -141,7 +141,7 @@ fn inclusive_prefix_sum_random_test() {
 
     let mut buffer_data = GpuBuffer::new(wgpu_context, original_values.clone(), wgpu::BufferUsages::STORAGE);
 
-    let mut prefix_sum = PrefixSum::new(
+    let prefix_sum = PrefixSum::new(
         wgpu_context,
         &buffer_data
     );

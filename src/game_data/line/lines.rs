@@ -3,7 +3,6 @@ use crate::renderer::renderable::Renderable;
 use crate::renderer::camera::Camera;
 use crate::utils::gpu_buffer::GpuBuffer;
 use crate::renderer::wgpu_context::WgpuContext;
-use rand::Rng;
 
 pub struct Lines {
     vertices: GpuBuffer<glam::Vec2>,        // Line endpoints
@@ -14,7 +13,7 @@ pub struct Lines {
 
 impl Lines {
     pub fn new(wgpu_context: &WgpuContext, camera: &Camera) -> Self {
-        const TOTAL_LINES: usize = 4;
+
         let vertices = Vec::new();
         let colors = Vec::new();
         let thicknesses = Vec::new();
@@ -135,7 +134,7 @@ impl Renderable for Lines {
         render_pass.draw(0..self.vertices.data().len() as u32, 0..1);
     }
 
-    fn update(&mut self, delta_time: f32, world_size: &Vec2, wgpu_context: &WgpuContext) {
+    fn update(&mut self, _delta_time: f32, _world_size: &Vec2, _wgpu_context: &WgpuContext) {
 
     }
 }

@@ -7,7 +7,6 @@ use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
-use crate::game_data::line::lines::Lines;
 use crate::game_data::particle::particle_system::ParticleSystem;
 use crate::game::input_manager::InputManager;
 use crate::renderer::render_timer::RenderTimer;

@@ -1,6 +1,4 @@
-use std::cell::RefCell;
 use std::num::NonZeroU32;
-use std::rc::Rc;
 use game_engine::utils::gpu_buffer::GpuBuffer;
 use game_engine::utils::radix_sort::radix_sort::GPUSorter;
 use game_engine::utils::guess_workgroup_size;
@@ -18,11 +16,11 @@ fn sort_test() {
     let mut scrambled_data: Vec<u32> = (0..n).rev().collect();
     let required_len = GPUSorter::get_required_keys_buffer_size(scrambled_data.len() as u32);
     scrambled_data.resize(required_len as usize, u32::MAX);
-    let mut scrambled_keys_buffer = Rc::new(RefCell::new(GpuBuffer::new(wgpu_context, scrambled_data.clone(), wgpu::BufferUsages::STORAGE)));
-    let mut scrambled_payload_buffer = Rc::new(RefCell::new(GpuBuffer::new(wgpu_context, scrambled_data.clone(), wgpu::BufferUsages::STORAGE)));
+    let mut scrambled_keys_buffer = GpuBuffer::new(wgpu_context, scrambled_data.clone(), wgpu::BufferUsages::STORAGE);
+    let mut scrambled_payload_buffer = GpuBuffer::new(wgpu_context, scrambled_data.clone(), wgpu::BufferUsages::STORAGE);
 
 
-    let sorter: GPUSorter = GPUSorter::new(device, guess_workgroup_size(wgpu_context).unwrap(), NonZeroU32::new(n).unwrap(), scrambled_keys_buffer.clone(), scrambled_payload_buffer.clone());
+    let sorter: GPUSorter = GPUSorter::new(device, guess_workgroup_size(wgpu_context).unwrap(), NonZeroU32::new(n).unwrap(), &scrambled_keys_buffer, &scrambled_payload_buffer);
     
     
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -37,7 +35,7 @@ fn sort_test() {
 
     let sorted_data: Vec<u32> = (0..n).collect();
 
-    assert_eq!(scrambled_keys_buffer.borrow_mut().download(wgpu_context).unwrap().as_slice()[0..n as usize], sorted_data);
-    assert_eq!(scrambled_payload_buffer.borrow_mut().download(wgpu_context).unwrap().as_slice()[0..n as usize], sorted_data);
+    assert_eq!(scrambled_keys_buffer.download(wgpu_context).unwrap().as_slice()[0..n as usize], sorted_data);
+    assert_eq!(scrambled_payload_buffer.download(wgpu_context).unwrap().as_slice()[0..n as usize], sorted_data);
 
 }

@@ -1,5 +1,3 @@
-use std::arch::x86_64::_SIDD_MASKED_NEGATIVE_POLARITY;
-
 use glam::{Vec2, Vec4};
 use rand::{random_range, Rng};
 use crate::{renderer::{camera::Camera, renderable::Renderable}, utils::gpu_buffer::GpuBuffer};
@@ -33,8 +31,8 @@ struct SimParams {
 impl ParticleSystem {
     pub fn new(wgpu_context: &WgpuContext, camera: &Camera, world_size: Vec2) -> Self {
         const NUM_PARTICLES: usize = 103000;
-        let WORLD_WIDTH: f32 = world_size.x;
-        let WORLD_HEIGHT: f32 = world_size.y;
+        let world_width: f32 = world_size.x;
+        let world_height: f32 = world_size.y;
 
         let mut rng = rand::rng();
 
@@ -46,8 +44,8 @@ impl ParticleSystem {
         let mut max_radius = f32::MIN;
 
         for _ in 0..NUM_PARTICLES {
-            let x = rng.random_range(0.0..WORLD_WIDTH);
-            let y = rng.random_range(0.0..WORLD_HEIGHT);
+            let x = rng.random_range(0.0..world_width);
+            let y = rng.random_range(0.0..world_height);
             let vel_x = rng.random_range(-50.0..50.0); // pixels per second
             let vel_y = rng.random_range(-50.0..50.0);
             positions.push(Vec2::new(x, y));
@@ -139,7 +137,7 @@ impl ParticleSystem {
 
         let sim_params_buffer = GpuBuffer::new(
             wgpu_context,
-            vec![SimParams { delta_time: 0.0, world_width: WORLD_WIDTH, world_height: WORLD_HEIGHT, _padding: 0.0 }],
+            vec![SimParams { delta_time: 0.0, world_width, world_height, _padding: 0.0 }],
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         );
 
@@ -370,7 +368,7 @@ impl ParticleSystem {
 
         self.max_radius = self.max_radius.max(rng);
 
-        self.integration_pass.update_binding_group(wgpu_context, wgpu_context.get_device().create_bind_group(
+        self.integration_pass.update_binding_group(wgpu_context.get_device().create_bind_group(
             &wgpu::BindGroupDescriptor {
                 label: None,
                 layout: self.integration_pass.get_bind_group_layout(),

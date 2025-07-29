@@ -102,7 +102,7 @@ impl ComputeShader {
     }
 
     /// A helper function to update the binding group with the given entries.
-    pub fn update_binding_group(&mut self, wgpu_context: &WgpuContext, bind_group: wgpu::BindGroup) {
+    pub fn update_binding_group(&mut self, bind_group: BindGroup) {
         self.bind_group = bind_group;
     }
 

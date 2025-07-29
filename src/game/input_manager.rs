@@ -1,7 +1,6 @@
 use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
-use crate::game::state::State;
 
 pub struct InputManager {
 
@@ -28,9 +27,6 @@ impl InputManager {
                 // Handle global input only
                 self.handle_key(event_loop, code, key_state.is_pressed());
             },
-            WindowEvent::MouseWheel { delta, .. } => {
-                // Mouse wheel is handled directly by renderer in State
-            }
             _ => {}
         }
     }

@@ -11,6 +11,7 @@ struct UniformData {
     num_particles: u32,
     num_collision_cells: u32,
     cell_size: f32,
+    delta_time: f32,
     cell_color: u32,
 };
 
@@ -330,6 +331,7 @@ fn resolve_cell_collisons(cell_hash: u32, start: u32) {
             let obj_1_radius = radius[object_id];
             let obj_2_radius = radius[other_object_id];
 
+
             let vec_i_j = obj_1_pos - obj_2_pos;
 
             let distance = length(vec_i_j);
@@ -337,12 +339,21 @@ fn resolve_cell_collisons(cell_hash: u32, start: u32) {
             if are_colliding(distance * distance, obj_1_radius, obj_2_radius) {
                 // Solve collision
                 let penetration_depth = (obj_1_radius + obj_2_radius) - distance;
-                let collision_direction_vector = normalize(vec_i_j);
+                let collision_direction_vector = vec_i_j / distance;
+
+
+                let corrected_magnitude: f32 = 0.4 * penetration_depth;
+                let correction_vector: vec2<f32> = collision_direction_vector * corrected_magnitude;
+
+                let inv_mass_1 = 1/obj_1_radius;
+                let inv_mass_2 = 1/obj_2_radius;
 
                 // Displace each particle by half of the penetration depth along the collision normal.
-                let displacement = collision_direction_vector * penetration_depth * 0.5;
+                let displacement = correction_vector * (inv_mass_1 / (inv_mass_1+inv_mass_2));
+                let displacement_2 = correction_vector * (inv_mass_2 / (inv_mass_1+inv_mass_2));
+
                 positions[object_id] += displacement;
-                positions[other_object_id] -= displacement;
+                positions[other_object_id] -= displacement_2;
             }
 
         }

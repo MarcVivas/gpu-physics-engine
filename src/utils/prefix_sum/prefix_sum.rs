@@ -201,17 +201,14 @@ impl PrefixSum {
         );
         
         self.first_pass.update_binding_group(
-            wgpu_context,
             binding_group.clone()
         );
         
         self.second_pass.update_binding_group(
-            wgpu_context,
             binding_group.clone()
         );
         
         self.third_pass.update_binding_group(
-            wgpu_context,
             binding_group
         );
     }

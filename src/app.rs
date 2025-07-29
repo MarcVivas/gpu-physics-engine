@@ -76,7 +76,7 @@ impl ApplicationHandler<State> for App {
     }
 
     #[allow(unused_mut)]
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, mut event: State) {
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, mut event: State) {
         // This is where proxy.send_event() ends up
         #[cfg(target_arch = "wasm32")]
         {
