@@ -65,10 +65,7 @@ impl WgpuContext {
             // For native, use the adapter's reported limits
             limits = adapter.limits();
         }
-
-        if limits.max_compute_workgroup_size_x < 1024 {
-            panic!("Your GPU does not support workgroups with 1024 threads.");
-        }
+        
         limits
     }
     pub async fn new_for_test() -> anyhow::Result<Self> {
