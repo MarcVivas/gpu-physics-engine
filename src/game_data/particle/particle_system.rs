@@ -31,10 +31,10 @@ struct SimParams {
 }
 
 impl ParticleSystem {
-    pub fn new(wgpu_context: &WgpuContext, camera: &Camera) -> Self {
+    pub fn new(wgpu_context: &WgpuContext, camera: &Camera, world_size: Vec2) -> Self {
         const NUM_PARTICLES: usize = 103000;
-        const WORLD_WIDTH: f32 = 1920.0;
-        const WORLD_HEIGHT: f32 = 1080.0;
+        let WORLD_WIDTH: f32 = world_size.x;
+        let WORLD_HEIGHT: f32 = world_size.y;
 
         let mut rng = rand::rng();
 
@@ -52,7 +52,7 @@ impl ParticleSystem {
             let vel_y = rng.random_range(-50.0..50.0);
             positions.push(Vec2::new(x, y));
             vels.push(Vec2::new(vel_x, vel_y));
-            let radius = rng.random_range(1..=4) as f32;
+            let radius = rng.random_range(1..=2) as f32;
             colors.push(glam::vec4(rng.random_range(0.3..0.8), rng.random_range(0.3..0.8), rng.random_range(0.3..0.8), 1.0));
             if radius > max_radius {
                 max_radius = radius;

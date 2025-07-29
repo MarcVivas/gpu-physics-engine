@@ -28,11 +28,11 @@ pub struct State {
 
 impl State {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
-        let world_size = Vec2::new(1920.0, 1080.0);
+        let world_size = Vec2::new(4920.0, 2080.0);
         let wgpu_context = WgpuContext::new(window).await?;
         let mut renderer = Renderer::new(&wgpu_context, &world_size).unwrap();
 
-        let particles = Rc::new(RefCell::new(ParticleSystem::new(&wgpu_context, renderer.camera())));
+        let particles = Rc::new(RefCell::new(ParticleSystem::new(&wgpu_context, renderer.camera(), world_size)));
         let grid =  Rc::new(RefCell::new(Grid::new(&wgpu_context, renderer.camera(), world_size, particles.borrow().get_max_radius(), particles.clone())));
 
         renderer.add_renderable(particles.clone());
