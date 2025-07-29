@@ -3,7 +3,6 @@
 const WORKGROUP_SIZE = 256;
 const ELEMENTS_PER_THREAD = 2u;
 const BLOCK_ELEMENTS = (WORKGROUP_SIZE * ELEMENTS_PER_THREAD);
-const WORKGROUPS_PER_BLOCK = BLOCK_ELEMENTS / WORKGROUP_SIZE;
 
 var<workgroup> shared_data: array<u32, BLOCK_ELEMENTS>;
 
@@ -51,12 +50,9 @@ fn prefix_sum_of_each_block(
     // Write back to global memory
 
     // Write back to global memory, WITH GUARDS
-    if (value_1_idx < num_elems) { // ADDED GUARD
-        data[value_1_idx] = shared_data[local_id.x] + value_1;
-    }
-    if (value_2_idx < num_elems) { // ADDED GUARD
-        data[value_2_idx] = shared_data[local_id.x + WORKGROUP_SIZE] + value_2;
-    }
+    data[value_1_idx] = shared_data[local_id.x] + value_1;
+    data[value_2_idx] = shared_data[local_id.x + WORKGROUP_SIZE] + value_2;
+
 
     // This only does the prefix sum of the values within the WORKGROUP BLOCK.
     // The results have to be combined in another shader.
@@ -157,17 +153,10 @@ fn prefix_sum_of_the_block_sums(
 
     downsweep_phase(local_id.x);
 
-     // Prefix sum of each block completed and stored in shared memory
-    let num_blocks_to_scan = u32(ceil(f32(num_elems) / f32(BLOCK_ELEMENTS)));
 
-     // Write back to global memory
-    // Write back to global memory, WITH GUARDS
-    if (value_1_idx < num_blocks_to_scan) { // ADDED GUARD
-        block_sums[value_1_idx] = shared_data[local_id.x] + value_1;
-    }
-    if (value_2_idx < num_blocks_to_scan) { // ADDED GUARD
-        block_sums[value_2_idx] = shared_data[local_id.x + WORKGROUP_SIZE] + value_2;
-    }
+    // Write back to global memory
+    block_sums[value_1_idx] = shared_data[local_id.x] + value_1;
+    block_sums[value_2_idx] = shared_data[local_id.x + WORKGROUP_SIZE] + value_2;
 }
 
 var<workgroup> previous_block_sum: u32;
