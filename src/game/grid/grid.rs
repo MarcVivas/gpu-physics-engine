@@ -11,6 +11,7 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use wgpu::{BindGroupLayout, BufferAsyncError};
 use crate::utils;
+use crate::utils::gpu_timer::GpuTimer;
 use crate::utils::radix_sort::radix_sort::GPUSorter;
 use crate::utils::prefix_sum::prefix_sum::PrefixSum;
 
@@ -467,111 +468,36 @@ impl Grid {
     
     
     /// Step 4: Solves collisions between objects in the same cell.
-    pub fn solve_collisions(&mut self, wgpu_context: &WgpuContext, dt: f32){
+    pub fn solve_collisions(&mut self, wgpu_context: &WgpuContext, dt: f32, gpu_timer: &mut GpuTimer){
         
         // Update the uniform if needed
         let old_uniform = self.uniform_buffer.data()[0];
-
-        {
-            let mut encoder = wgpu_context.get_device().create_command_encoder(
-                &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
-            );
-
-            let new_uniform: UniformData = UniformData {
-                num_particles: old_uniform.num_particles,
-                num_collision_cells: old_uniform.num_collision_cells,
-                cell_size: old_uniform.cell_size,
-                delta_time: dt,
-                color: 1,
-            };
-            self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
-            self.grid_kernels.collision_solver_shader.indirect_dispatch(
-                &mut encoder,
-                self.indirect_dispatch_buffer.buffer(),
-                0
-            );
-
-            wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
-
-
-        }
-
-        {
-            let mut encoder = wgpu_context.get_device().create_command_encoder(
-                &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
-            );
-
-            let new_uniform: UniformData = UniformData {
-                num_particles: old_uniform.num_particles,
-                num_collision_cells: old_uniform.num_collision_cells,
-                cell_size: old_uniform.cell_size,
-                delta_time: dt,
-                color: 2,
-            };
-            self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
-            self.grid_kernels.collision_solver_shader.indirect_dispatch(
-                &mut encoder,
-                self.indirect_dispatch_buffer.buffer(),
-                0
-            );
-
-            wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
-
-
-        }
-
-        {
-            let mut encoder = wgpu_context.get_device().create_command_encoder(
-                &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
-            );
-
-            let new_uniform: UniformData = UniformData {
-                num_particles: old_uniform.num_particles,
-                num_collision_cells: old_uniform.num_collision_cells,
-                cell_size: old_uniform.cell_size,
-                delta_time: dt,
-                color: 3,
-            };
-            self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
-            self.grid_kernels.collision_solver_shader.indirect_dispatch(
-                &mut encoder,
-                self.indirect_dispatch_buffer.buffer(),
-                0
-            );
-
-            wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
-
-
-        }
-
-        {
-            let mut encoder = wgpu_context.get_device().create_command_encoder(
-                &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
-            );
-
-            let new_uniform: UniformData = UniformData {
-                num_particles: old_uniform.num_particles,
-                num_collision_cells: old_uniform.num_collision_cells,
-                cell_size: old_uniform.cell_size,
-                delta_time: dt,
-                color: 4,
-            };
-            self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
-            self.grid_kernels.collision_solver_shader.indirect_dispatch(
-                &mut encoder,
-                self.indirect_dispatch_buffer.buffer(),
-                0
-            );
-
-            wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
-
-
-        }
-     
-
         
-            
-        
+        for color in 1u32..=4u32 {
+            let mut encoder = wgpu_context.get_device().create_command_encoder(
+                &wgpu::CommandEncoderDescriptor { label: Some(&format!("Collision Encoder Color {}", color)) }
+            );
+
+            let scope_label = format!("Solve Collisions - Color {}", color);
+            gpu_timer.scope(&scope_label, &mut encoder, |encoder| {
+                let new_uniform: UniformData = UniformData {
+                    num_particles: old_uniform.num_particles,
+                    num_collision_cells: old_uniform.num_collision_cells,
+                    cell_size: old_uniform.cell_size,
+                    delta_time: dt,
+                    color,
+                };
+                self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
+
+                self.grid_kernels.collision_solver_shader.indirect_dispatch(
+                    encoder,
+                    self.indirect_dispatch_buffer.buffer(),
+                    0
+                );
+            });
+
+            wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
+        }
 
     }
     /// Returns the number of collision cells to solve.
@@ -606,7 +532,9 @@ impl Renderable for Grid {
             self.lines.as_ref().expect("Not drawing grid lines").draw(render_pass, camera);
         }
     }
-    fn update(&mut self, delta_time:f32, _world_size:&Vec2, wgpu_context: &WgpuContext){
+    fn update(&mut self, delta_time:f32, world_size: &glam::Vec2, wgpu_context: &WgpuContext, gpu_timer: &mut GpuTimer){
+        gpu_timer.begin_frame();
+
         // Create a command encoder to build the command buffer
         let mut encoder = wgpu_context.get_device().create_command_encoder(
             &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
@@ -626,30 +554,29 @@ impl Renderable for Grid {
             self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
         }
 
-        // Step 1: Build the cell IDs array
-        self.build_cell_ids(&mut encoder, total_particles);
+        gpu_timer.scope("Build Cell IDs", &mut encoder, |encoder| {
+            self.build_cell_ids(encoder, total_particles);
+        });
 
-        // Step 2: Sort the map of cell ids to objects by cell id
-        self.sort_map(&mut encoder, wgpu_context);
-        
-        // Step 3: Build the collision cell list
-        self.build_collision_cells(wgpu_context, &mut encoder);
+        gpu_timer.scope("Sort Map", &mut encoder, |encoder| {
+            self.sort_map(encoder, wgpu_context);
+        });
+
+        gpu_timer.scope("Build Collision Cells", &mut encoder, |encoder| {
+            self.build_collision_cells(wgpu_context, encoder);
+        });
 
         // Submit the commands to the GPU
         wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
 
 
         // Step 4: Perform the collision resolution.
-        self.solve_collisions(wgpu_context, delta_time);
-        
-        //println!("{:?}" , self.chunk_counting_buffer.download(wgpu_context).unwrap());
-        //println!("{:?}" , self.collision_cells.download(wgpu_context).unwrap());
-        //println!("{:?}" , self.indirect_dispatch_buffer.download(wgpu_context).unwrap());
-        
-        //println!("Cell ids{:?}", &self.cell_ids.borrow_mut().download(wgpu_context).unwrap().as_slice()[0..total_particles as usize * 4usize]);
-        //println!("Object ids{:?}", self.object_ids.borrow_mut().download(wgpu_context).unwrap());
-        // self.elements.borrow().instances().download(wgpu_context).unwrap();
-        // self.elements.borrow().radius().download(wgpu_context).unwrap();
+        self.solve_collisions(wgpu_context, delta_time, gpu_timer);
+
+        gpu_timer.end_frame(wgpu_context.get_device(), wgpu_context.get_queue());
+
+        #[cfg(debug_assertions)]
+        gpu_timer.print_results(wgpu_context);
 
     }
 

@@ -13,6 +13,8 @@ use crate::renderer::render_timer::RenderTimer;
 use crate::renderer::renderer::Renderer;
 use crate::renderer::wgpu_context::WgpuContext;
 use crate::game::grid::grid::Grid;
+use crate::utils::gpu_timer::GpuTimer;
+
 // This will store the state of the game
 pub struct State {
     world_size: Vec2,
@@ -23,6 +25,7 @@ pub struct State {
     particles: Rc<RefCell<ParticleSystem>>,
     grid: Rc<RefCell<Grid>>,
     mouse_position: Option<dpi::PhysicalPosition<f64>>,
+    gpu_timer: GpuTimer,
 }
 
 impl State {
@@ -41,7 +44,9 @@ impl State {
         let input_manager = InputManager::new();
 
         let mouse_position = None;
-
+        
+        let gpu_timer = GpuTimer::new(wgpu_context.get_device(), wgpu_context.get_queue(), 10);
+        
         Ok(Self {
             world_size,
             wgpu_context,
@@ -51,6 +56,7 @@ impl State {
             renderer,
             mouse_position,
             grid,
+            gpu_timer,
         })
 
     }
@@ -117,7 +123,7 @@ impl State {
     fn update(&mut self){
         let dt = self.render_timer.get_delta().as_secs_f32();
         // Update renderer with delta time (includes camera update)
-        self.renderer.update(dt, &self.wgpu_context, &self.world_size);
+        self.renderer.update(dt, &self.wgpu_context, &self.world_size, &mut self.gpu_timer);
     }
 
     fn render(&mut self)  -> Result<(), wgpu::SurfaceError>{

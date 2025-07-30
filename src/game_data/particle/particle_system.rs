@@ -1,8 +1,10 @@
 use glam::{Vec2, Vec4};
 use rand::{random_range, Rng};
+use wgpu::hal::DynCommandEncoder;
 use crate::{renderer::{camera::Camera, renderable::Renderable}, utils::gpu_buffer::GpuBuffer};
 use crate::renderer::wgpu_context::WgpuContext;
 use crate::utils::compute_shader::ComputeShader;
+use crate::utils::gpu_timer::GpuTimer;
 
 const WORKGROUP_SIZE: (u32, u32, u32) = (64, 1, 1);
 pub struct ParticleSystem {
@@ -50,7 +52,7 @@ impl ParticleSystem {
             let vel_y = rng.random_range(-50.0..50.0);
             positions.push(Vec2::new(x, y));
             vels.push(Vec2::new(vel_x, vel_y));
-            let radius = rng.random_range(1..=2) as f32;
+            let radius = rng.random_range(0.5..=0.5) as f32;
             colors.push(glam::vec4(rng.random_range(0.3..0.8), rng.random_range(0.3..0.8), rng.random_range(0.3..0.8), 1.0));
             if radius > max_radius {
                 max_radius = radius;
@@ -62,7 +64,7 @@ impl ParticleSystem {
 
         let current_positions = GpuBuffer::new(wgpu_context, positions.clone(), wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE);
         let previous_positions = GpuBuffer::new(wgpu_context, positions, wgpu::BufferUsages::STORAGE);
-        let velocities = GpuBuffer::new(wgpu_context, vels, wgpu::BufferUsages::STORAGE);
+        let velocities = GpuBuffer::new(wgpu_context, vels, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE);
 
         let shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("particle_system.wgsl"));
         let render_pipeline_layout = wgpu_context.get_device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
@@ -97,6 +99,11 @@ impl ParticleSystem {
                         array_stride: std::mem::size_of::<Vec4>() as wgpu::BufferAddress,
                         step_mode: wgpu::VertexStepMode::Instance,
                         attributes: &wgpu::vertex_attr_array![3 => Float32x4],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<Vec2>() as wgpu::BufferAddress,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &wgpu::vertex_attr_array![4 => Float32x2],
                     },
 
                 ],
@@ -408,12 +415,13 @@ impl Renderable for ParticleSystem {
         render_pass.set_vertex_buffer(1, self.current_positions.buffer().slice(..));
         render_pass.set_vertex_buffer(2, self.radius.buffer().slice(..));
         render_pass.set_vertex_buffer(3, self.colors.buffer().slice(..));
+        render_pass.set_vertex_buffer(4, self.velocities.buffer().slice(..));
 
         render_pass.set_bind_group(0, camera.binding_group(), &[]);
         render_pass.draw_indexed(0..self.indices().len() as u32, 0, 0..self.current_positions.len() as u32);
     }
 
-    fn update(&mut self, delta_time:f32, world_size:&glam::Vec2, wgpu_context: &WgpuContext) {
+    fn update(&mut self, delta_time:f32, world_size:&Vec2, wgpu_context: &WgpuContext, gpu_timer: &mut GpuTimer) {
         // First, update the delta_time in the uniform buffer
         let sim_params = SimParams {
             delta_time,
@@ -432,13 +440,23 @@ impl Renderable for ParticleSystem {
             &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
         );
 
-        self.integration_pass.dispatch_by_items(
-            &mut encoder,
-            (self.current_positions.data().len() as u32, 1, 1),
-        );
+        gpu_timer.begin_frame();
+        gpu_timer.scope("Integration pass", &mut encoder, |encoder| {
+            self.integration_pass.dispatch_by_items(
+                encoder,
+                (self.current_positions.data().len() as u32, 1, 1),
+            );
+        });
+        
 
         // Submit the commands to the GPU
         wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
+        
+        gpu_timer.end_frame(wgpu_context.get_device(), wgpu_context.get_queue());
+
+        #[cfg(debug_assertions)]
+        gpu_timer.print_results(wgpu_context);
+        
     }
 
 

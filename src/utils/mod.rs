@@ -7,6 +7,7 @@ pub mod gpu_buffer;
 pub mod compute_shader;
 pub mod radix_sort;
 pub mod prefix_sum;
+pub(crate) mod gpu_timer;
 
 /// Function guesses the best subgroup size by testing the sorter with
 /// subgroup sizes 1,8,16,32,64,128 and returning the largest subgroup size that worked.

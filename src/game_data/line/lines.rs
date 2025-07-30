@@ -3,6 +3,7 @@ use crate::renderer::renderable::Renderable;
 use crate::renderer::camera::Camera;
 use crate::utils::gpu_buffer::GpuBuffer;
 use crate::renderer::wgpu_context::WgpuContext;
+use crate::utils::gpu_timer::GpuTimer;
 
 pub struct Lines {
     vertices: GpuBuffer<glam::Vec2>,        // Line endpoints
@@ -134,7 +135,7 @@ impl Renderable for Lines {
         render_pass.draw(0..self.vertices.data().len() as u32, 0..1);
     }
 
-    fn update(&mut self, _delta_time: f32, _world_size: &Vec2, _wgpu_context: &WgpuContext) {
+    fn update(&mut self, _delta_time: f32, _world_size: &glam::Vec2, wgpu_context: &WgpuContext, _gpu_timer: &mut GpuTimer) {
 
     }
 }
