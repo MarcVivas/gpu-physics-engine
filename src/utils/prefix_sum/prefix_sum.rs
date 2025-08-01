@@ -146,7 +146,7 @@ impl PrefixSum {
         // Pass 1: Dispatch one workgroup per data block.
         self.first_pass.dispatch(encoder, (num_blocks, 1, 1));
 
-        if num_items > LIMIT {
+        if num_items >= LIMIT {
             self.block_prefix_sum.as_ref().unwrap().execute(wgpu_context, encoder, num_blocks);
         }
         else {
@@ -175,9 +175,18 @@ impl PrefixSum {
         let binding_group_layout = self.first_pass.get_bind_group_layout();
         
         let new_len: u32 = buffer.len() as u32;
-        self.uniform_data.replace_elem(new_len, 0, wgpu_context);
         
-        self.intermediate_buffer.push_all(&vec![0u32; PrefixSum::get_max_possible_block_sums(buffer)-self.intermediate_buffer.len()], wgpu_context);
+        self.uniform_data.replace_elem(new_len, 0, wgpu_context);
+
+        let num_blocks_to_add = PrefixSum::get_max_possible_block_sums(buffer)-self.intermediate_buffer.len();
+        self.intermediate_buffer.push_all(&vec![0u32; num_blocks_to_add], wgpu_context);
+
+        if new_len >= LIMIT && self.block_prefix_sum.is_none(){
+            self.block_prefix_sum = Some(Box::new(PrefixSum::new(wgpu_context, &self.intermediate_buffer)));
+        }
+        else if new_len >= LIMIT && self.block_prefix_sum.is_some(){
+            self.block_prefix_sum.as_mut().unwrap().update_buffers(wgpu_context, &self.intermediate_buffer);
+        }
         
         let binding_group = wgpu_context.get_device().create_bind_group(
             &wgpu::BindGroupDescriptor {

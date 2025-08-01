@@ -500,13 +500,6 @@ impl Grid {
         }
 
     }
-    /// Returns the number of collision cells to solve.
-    /// Uses the prefix sum to get the number
-    #[allow(dead_code)]
-    fn get_num_of_collision_cells_to_solve(&mut self, wgpu_context: &WgpuContext) -> u32 {
-        self.chunk_counting_buffer.download_last(wgpu_context).unwrap().unwrap()
-        
-    }
 
     pub fn download_cell_ids(&mut self, wgpu_context: &WgpuContext) ->  Result<Vec<u32>, BufferAsyncError>{
         Ok(self.cell_ids.download(wgpu_context)?.clone())
@@ -575,9 +568,8 @@ impl Renderable for Grid {
 
         gpu_timer.end_frame(wgpu_context.get_device(), wgpu_context.get_queue());
 
-        #[cfg(debug_assertions)]
         gpu_timer.print_results(wgpu_context);
-
+        
     }
 
 

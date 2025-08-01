@@ -32,7 +32,7 @@ struct SimParams {
 
 impl ParticleSystem {
     pub fn new(wgpu_context: &WgpuContext, camera: &Camera, world_size: Vec2) -> Self {
-        const NUM_PARTICLES: usize = 103000;
+        const NUM_PARTICLES: usize = 6;
         let world_width: f32 = world_size.x;
         let world_height: f32 = world_size.y;
 
@@ -346,35 +346,48 @@ impl ParticleSystem {
         self.max_radius
     }
     pub fn add_particles(&mut self, mouse_pos: &Vec2, wgpu_context: &WgpuContext){
-
-        self.current_positions.push(
-            mouse_pos.clone(),
-            wgpu_context
-        );
         
-        self.previous_positions.push(
-            mouse_pos.clone(),
-            wgpu_context       
-        );
         
-        self.velocities.push(
-            Vec2::new(random_range(1.0..10.0), rand::random_range(1.0..10.0)),
-            wgpu_context
-        );
+        for i in 0..100 {
+            // Generate a random angle (0 to 2*PI radians)
+            let angle = random_range(0.0..std::f32::consts::TAU); // TAU is 2*PI
 
-        let rng = random_range(1.0..10.0);
-        self.radius.push(
-            rng,
-            wgpu_context
-        );
+            // Generate a random radius (from mouse_pos)
+            // Start the minimum radius higher to avoid center clumping
+            // And potentially make the maximum radius larger or adjust its scaling
+            let min_radius = 10.0 ; // Minimum distance from the center
+            let max_radius = 50.0 + (i as f32 * 1.5); // Example: Gradually increase max radius
+            let radius = random_range(min_radius..=max_radius);
+
+
+            // Convert polar coordinates to Cartesian (x, y)
+            let offset_x = radius * angle.cos();
+            let offset_y = radius * angle.sin();
+
+            let pos: Vec2 = mouse_pos + Vec2::new(offset_x, offset_y);
+
+            self.current_positions.push(pos.clone(), wgpu_context);
+            self.previous_positions.push(pos, wgpu_context);
+            // ... rest of your particle property generation
+            self.velocities.push(
+                Vec2::new(random_range(1.0..10.0), random_range(1.0..10.0)),
+                wgpu_context
+            );
+
+            let rng_radius_particle = random_range(1.0..10.0); // Renamed to avoid conflict
+            self.radius.push(
+                rng_radius_particle,
+                wgpu_context
+            );
+
+            self.max_radius = self.max_radius.max(rng_radius_particle);
+
+            self.colors.push(
+                glam::vec4(random_range(0.3..1.0), random_range(0.3..1.0), random_range(0.3..1.0), 1.0),
+                wgpu_context
+            );
+        }
         
-        self.colors.push(
-            glam::vec4(random_range(0.3..1.0), random_range(0.3..1.0), random_range(0.3..1.0), 1.0),
-            wgpu_context       
-        );
-
-        self.max_radius = self.max_radius.max(rng);
-
         self.integration_pass.update_binding_group(wgpu_context.get_device().create_bind_group(
             &wgpu::BindGroupDescriptor {
                 label: None,
@@ -454,7 +467,6 @@ impl Renderable for ParticleSystem {
         
         gpu_timer.end_frame(wgpu_context.get_device(), wgpu_context.get_queue());
 
-        #[cfg(debug_assertions)]
         gpu_timer.print_results(wgpu_context);
         
     }
