@@ -1,5 +1,11 @@
-use std::num::NonZeroU32;
+use std::collections::HashMap;
 use crate::renderer::wgpu_context::WgpuContext;
+
+struct ScopeData {
+    label: String,
+    total_time_ms: f64,
+    count: u64,
+}
 
 pub struct GpuTimer {
     query_set: wgpu::QuerySet,
@@ -7,8 +13,15 @@ pub struct GpuTimer {
     staging_buffer: wgpu::Buffer,
     period: f32,
     capacity: u32,
+
+    scopes: Vec<ScopeData>,
+    scope_map: HashMap<String, usize>,
+
     query_count: u32,
-    labels: Vec<String>,
+    frame_scope_indices: Vec<usize>,
+
+    last_frame_query_count: u32,
+    last_frame_scope_indices: Vec<usize>,
 }
 
 impl GpuTimer {
@@ -41,60 +54,81 @@ impl GpuTimer {
             staging_buffer,
             period: queue.get_timestamp_period(),
             capacity,
+            scopes: Vec::new(),
+            scope_map: HashMap::new(),
             query_count: 0,
-            labels: Vec::with_capacity(capacity as usize),
+            frame_scope_indices: Vec::with_capacity(capacity as usize),
+            last_frame_query_count: 0,
+            last_frame_scope_indices: Vec::with_capacity(capacity as usize),
         }
     }
 
     pub fn begin_frame(&mut self) {
         self.query_count = 0;
-        self.labels.clear();
+        self.frame_scope_indices.clear();
     }
 
     pub fn scope<F>(&mut self, label: impl Into<String>, encoder: &mut wgpu::CommandEncoder, work: F)
     where
         F: FnOnce(&mut wgpu::CommandEncoder),
     {
-        assert!(self.query_count < self.capacity, "GpuTimer capacity exceeded");
-        let start_index = self.query_count * 2;
-        let end_index = start_index + 1;
+        if self.query_count >= self.capacity {
+            return;
+        }
 
-        encoder.write_timestamp(&self.query_set, start_index);
+        let label_str = label.into();
+        let scope_index = *self.scope_map.entry(label_str.clone()).or_insert_with(|| {
+            let index = self.scopes.len();
+            self.scopes.push(ScopeData {
+                label: label_str,
+                total_time_ms: 0.0,
+                count: 0,
+            });
+            index
+        });
+
+        let start_query = self.query_count * 2;
+        let end_query = start_query + 1;
+
+        encoder.write_timestamp(&self.query_set, start_query);
         work(encoder);
-        encoder.write_timestamp(&self.query_set, end_index);
+        encoder.write_timestamp(&self.query_set, end_query);
 
-        self.labels.push(label.into());
+        self.frame_scope_indices.push(scope_index);
         self.query_count += 1;
     }
 
-    pub fn end_frame(&self, device: &wgpu::Device, queue: &wgpu::Queue) {
-        if self.query_count == 0 {
-            return;
+    pub fn end_frame(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        self.process_results(device);
+
+        if self.query_count > 0 {
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("GpuTimer EndFrame Encoder"),
+            });
+
+            encoder.resolve_query_set(
+                &self.query_set,
+                0..self.query_count * 2,
+                &self.resolve_buffer,
+                0,
+            );
+            encoder.copy_buffer_to_buffer(
+                &self.resolve_buffer,
+                0,
+                &self.staging_buffer,
+                0,
+                self.resolve_buffer.size(),
+            );
+            queue.submit(std::iter::once(encoder.finish()));
         }
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("GpuTimer EndFrame Encoder"),
-        });
 
-        encoder.resolve_query_set(
-            &self.query_set,
-            0..self.query_count * 2,
-            &self.resolve_buffer,
-            0,
-        );
-        encoder.copy_buffer_to_buffer(
-            &self.resolve_buffer,
-            0,
-            &self.staging_buffer,
-            0,
-            self.resolve_buffer.size(),
-        );
-
-        queue.submit(std::iter::once(encoder.finish()));
+        self.last_frame_query_count = self.query_count;
+        self.last_frame_scope_indices.clone_from(&self.frame_scope_indices);
     }
 
-    fn read_results(&self, device: &wgpu::Device) -> Option<Vec<(String, f64)>> {
-        if self.query_count == 0 {
-            return Some(Vec::new());
+    fn process_results(&mut self, device: &wgpu::Device) {
+        if self.last_frame_query_count == 0 {
+            return;
         }
 
         let buffer_slice = self.staging_buffer.slice(..);
@@ -109,35 +143,38 @@ impl GpuTimer {
             let data = buffer_slice.get_mapped_range();
             let timestamps: &[u64] = bytemuck::cast_slice(&data);
 
-            let mut results = Vec::with_capacity(self.query_count as usize);
-            for i in 0..self.query_count as usize {
+            for i in 0..self.last_frame_query_count as usize {
                 let start_time = timestamps[i * 2];
                 let end_time = timestamps[i * 2 + 1];
+
                 if end_time > start_time {
                     let delta_ticks = end_time - start_time;
                     let delta_ns = delta_ticks as f64 * self.period as f64;
                     let delta_ms = delta_ns / 1_000_000.0;
-                    results.push((self.labels[i].clone(), delta_ms));
+
+                    let scope_index = self.last_frame_scope_indices[i];
+                    self.scopes[scope_index].total_time_ms += delta_ms;
+                    self.scopes[scope_index].count += 1;
                 }
             }
 
             drop(data);
             self.staging_buffer.unmap();
-
-            Some(results)
-        } else {
-            None
         }
     }
-    
-    
-    pub fn print_results(&self, wgpu_context: &WgpuContext) {
-        #[cfg(debug_assertions)]
-        if let Some(results) = self.read_results(wgpu_context.get_device()) {
-            if !results.is_empty() {
-                println!("--- GPU Frame Timings ---");
-                for (label, time_ms) in results {
-                    println!("{:<25}: {:.4} ms", label, time_ms);
+
+    pub fn report(&mut self, wgpu_context: &WgpuContext) {
+        {
+            self.process_results(wgpu_context.get_device());
+            self.last_frame_query_count = 0;
+
+            if !self.scopes.is_empty() {
+                println!("\n--- GPU Timings Report (Average) ---");
+                for scope in &self.scopes {
+                    if scope.count > 0 {
+                        let avg_ms = scope.total_time_ms / scope.count as f64;
+                        println!("{:<25}: {:.4} ms ({} samples)", scope.label, avg_ms, scope.count);
+                    }
                 }
             }
         }

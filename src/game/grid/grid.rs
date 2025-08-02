@@ -473,6 +473,7 @@ impl Grid {
     
     
     /// Step 4: Solves collisions between objects in the same cell.
+    #[cfg(feature = "benchmark")]
     pub fn solve_collisions(&mut self, wgpu_context: &WgpuContext, dt: f32, gpu_timer: &mut GpuTimer){
         
         // Update the uniform if needed
@@ -507,6 +508,37 @@ impl Grid {
 
     }
 
+
+    #[cfg(not(feature = "benchmark"))]
+    pub fn solve_collisions(&mut self, wgpu_context: &WgpuContext, dt: f32){
+
+        // Update the uniform if needed
+        let old_uniform = self.uniform_buffer.data()[0];
+
+        for color in 1u32..=4u32 {
+            let mut encoder = wgpu_context.get_device().create_command_encoder(
+                &wgpu::CommandEncoderDescriptor { label: Some(&format!("Collision Encoder Color {}", color)) }
+            );
+            let new_uniform: UniformData = UniformData {
+                num_particles: old_uniform.num_particles,
+                num_collision_cells: old_uniform.num_collision_cells,
+                cell_size: old_uniform.cell_size,
+                delta_time: dt,
+                color,
+                num_counting_chunks: Grid::get_num_counting_chunks(&self.collision_cells),
+            };
+            self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
+
+            self.grid_kernels.collision_solver_shader.indirect_dispatch(
+                &mut encoder,
+                self.indirect_dispatch_buffer.buffer(),
+                0
+            );
+            wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
+        }
+
+    }
+
     pub fn download_cell_ids(&mut self, wgpu_context: &WgpuContext) ->  Result<Vec<u32>, BufferAsyncError>{
         Ok(self.cell_ids.download(wgpu_context)?.clone())
     }
@@ -531,9 +563,10 @@ impl Renderable for Grid {
             self.lines.as_ref().expect("Not drawing grid lines").draw(render_pass, camera);
         }
     }
+    
+    #[cfg(feature = "benchmark")]
     fn update(&mut self, delta_time:f32, _world_size: &Vec2, wgpu_context: &WgpuContext, gpu_timer: &mut GpuTimer){
         gpu_timer.begin_frame();
-
         // Create a command encoder to build the command buffer
         let mut encoder = wgpu_context.get_device().create_command_encoder(
             &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
@@ -574,7 +607,44 @@ impl Renderable for Grid {
 
         gpu_timer.end_frame(wgpu_context.get_device(), wgpu_context.get_queue());
 
-        gpu_timer.print_results(wgpu_context);
+    }
+
+
+    #[cfg(not(feature = "benchmark"))]
+    fn update(&mut self, delta_time:f32, _world_size: &Vec2, wgpu_context: &WgpuContext){
+
+        // Create a command encoder to build the command buffer
+        let mut encoder = wgpu_context.get_device().create_command_encoder(
+            &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
+        );
+
+        // Update the uniform if needed
+        let total_particles = self.elements.borrow().len() as u32;
+        let prev_num_particles = self.uniform_buffer.data()[0].num_particles;
+        if total_particles != prev_num_particles {
+            let new_uniform:UniformData = UniformData{
+                num_particles: total_particles,
+                num_collision_cells: total_particles * 2u32.pow(self.dim),
+                cell_size: Self::gen_cell_size(self.elements.borrow().get_max_radius()),
+                delta_time,
+                color: 0u32,
+                num_counting_chunks: Grid::get_num_counting_chunks(&self.collision_cells),
+            };
+            self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
+        }
+
+        self.build_cell_ids(&mut encoder, total_particles);
+
+        self.sort_map(&mut encoder, wgpu_context);
+
+        self.build_collision_cells(wgpu_context, &mut encoder);
+
+        // Submit the commands to the GPU
+        wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
+
+        // Step 4: Perform the collision resolution.
+        self.solve_collisions(wgpu_context, delta_time);
+
     }
 
 

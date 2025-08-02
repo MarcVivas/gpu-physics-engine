@@ -119,15 +119,28 @@ impl State {
         }
 
     }
-
+    #[cfg(feature = "benchmark")]
     fn update(&mut self){
         let dt = self.render_timer.get_delta().as_secs_f32();
         // Update renderer with delta time (includes camera update)
         self.renderer.update(dt, &self.wgpu_context, &self.world_size, &mut self.gpu_timer);
     }
 
+    #[cfg(not(feature = "benchmark"))]
+    fn update(&mut self){
+        let dt = self.render_timer.get_delta().as_secs_f32();
+        // Update renderer with delta time (includes camera update)
+        self.renderer.update(dt, &self.wgpu_context, &self.world_size);
+    }
+
     fn render(&mut self)  -> Result<(), wgpu::SurfaceError>{
         self.renderer.render(&self.wgpu_context)?;
         Ok(())
+    }
+}
+
+impl Drop for State {
+    fn drop(&mut self) {
+        self.gpu_timer.report(&self.wgpu_context);
     }
 }

@@ -415,8 +415,7 @@ impl ParticleSystem {
                     },
                 ],
             }));
-      
-
+        println!("Total particles: {}", self.current_positions.len());
     }
 }
 
@@ -434,6 +433,7 @@ impl Renderable for ParticleSystem {
         render_pass.draw_indexed(0..self.indices().len() as u32, 0, 0..self.current_positions.len() as u32);
     }
 
+    #[cfg(feature = "benchmark")]
     fn update(&mut self, delta_time:f32, world_size:&Vec2, wgpu_context: &WgpuContext, gpu_timer: &mut GpuTimer) {
         // First, update the delta_time in the uniform buffer
         let sim_params = SimParams {
@@ -467,7 +467,35 @@ impl Renderable for ParticleSystem {
         
         gpu_timer.end_frame(wgpu_context.get_device(), wgpu_context.get_queue());
 
-        gpu_timer.print_results(wgpu_context);
+    }
+
+    #[cfg(not(feature = "benchmark"))]
+    fn update(&mut self, delta_time:f32, world_size:&Vec2, wgpu_context: &WgpuContext) {
+        // First, update the delta_time in the uniform buffer
+        let sim_params = SimParams {
+            delta_time,
+            world_width: world_size.x, // Make these constants accessible
+            world_height: world_size.y,
+            _padding: 0.0,
+        };
+        wgpu_context.get_queue().write_buffer(
+            &self.sim_params_buffer.buffer(),
+            0,
+            bytemuck::cast_slice(&[sim_params]),
+        );
+
+        // Create a command encoder to build the command buffer
+        let mut encoder = wgpu_context.get_device().create_command_encoder(
+            &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
+        );
+        
+        self.integration_pass.dispatch_by_items(
+            &mut encoder,
+            (self.current_positions.data().len() as u32, 1, 1),
+        );
+        
+        // Submit the commands to the GPU
+        wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
         
     }
 

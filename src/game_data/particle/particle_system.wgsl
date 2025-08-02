@@ -108,7 +108,7 @@ model: VertexInput, instance: InstanceInput, radius: RadiusInput, color: ColorIn
 }
 
 
-const MAX_VELOCITY = 0.2;
+const MAX_VELOCITY = 0.8;
 fn get_particle_color(particle_velocity: vec2<f32>) -> vec3<f32>{
 
     // Compute the magnitude of the particle's velocity

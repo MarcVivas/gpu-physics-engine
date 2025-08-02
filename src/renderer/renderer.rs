@@ -88,11 +88,24 @@ impl Renderer {
     }
 
     // Update renderables
+    #[cfg(feature = "benchmark")]
     pub fn update(&mut self, dt: f32, wgpu_context: &WgpuContext, world_size: &glam::Vec2, gpu_timer: &mut GpuTimer) {
         // Update camera based on input and delta time
         self.camera.update(dt);
         for renderable in &mut self.renderables {
             renderable.borrow_mut().update(dt, world_size, wgpu_context, gpu_timer);
+        }
+        // Update camera matrices and upload to GPU
+        self.update_camera_matrices(wgpu_context);
+    }
+
+    /// Update renderables
+    #[cfg(not(feature = "benchmark"))]
+    pub fn update(&mut self, dt: f32, wgpu_context: &WgpuContext, world_size: &glam::Vec2) {
+        // Update camera based on input and delta time
+        self.camera.update(dt);
+        for renderable in &mut self.renderables {
+            renderable.borrow_mut().update(dt, world_size, wgpu_context);
         }
         // Update camera matrices and upload to GPU
         self.update_camera_matrices(wgpu_context);

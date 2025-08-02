@@ -135,6 +135,12 @@ impl Renderable for Lines {
         render_pass.draw(0..self.vertices.data().len() as u32, 0..1);
     }
 
+    #[cfg(not(feature = "benchmark"))]
+    fn update(&mut self, _delta_time: f32, _world_size: &glam::Vec2, wgpu_context: &WgpuContext) {
+
+    }
+
+    #[cfg(feature = "benchmark")]
     fn update(&mut self, _delta_time: f32, _world_size: &glam::Vec2, wgpu_context: &WgpuContext, _gpu_timer: &mut GpuTimer) {
 
     }
