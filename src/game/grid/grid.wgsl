@@ -13,6 +13,7 @@ struct UniformData {
     cell_size: f32,
     delta_time: f32,
     cell_color: u32,
+    num_counting_chunks: u32,
 };
 
 struct DispatchArgs {
@@ -194,7 +195,7 @@ fn prepare_dispatch_buffer(){
 
     // Prepare the dispatch buffer
     // Read the total count from the last element of the prefix sum buffer
-    let total_items = chunk_obj_count[arrayLength(&chunk_obj_count) - 1u];
+    let total_items = chunk_obj_count[uniform_data.num_counting_chunks - 1];
 
     // Calculate workgroups needed
     let workgroups_x = (total_items + WORKGROUP_SIZE - 1u) / WORKGROUP_SIZE;
@@ -364,7 +365,7 @@ fn resolve_cell_collisons(cell_hash: u32, start: u32) {
 
 fn get_number_of_collision_cells() -> u32 {
     // Read the total count from the last element of the prefix sum buffer
-    return chunk_obj_count[arrayLength(&chunk_obj_count) - 1u];
+    return chunk_obj_count[uniform_data.num_counting_chunks - 1u];
 
 }
 
@@ -373,7 +374,6 @@ fn get_number_of_collision_cells() -> u32 {
 fn solve_collisions(@builtin(global_invocation_id) global_id: vec3<u32>){
 
     let tid: u32 = global_id.x;
-
 
 
     if tid >= get_number_of_collision_cells() {
