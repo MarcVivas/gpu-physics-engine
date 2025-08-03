@@ -112,7 +112,7 @@ fn is_obj_in_cell(particle_pos: vec2<f32>, particle_sq_radius: f32, cell_coord: 
     // Closest point to the object center
     let closest_point = clamp(particle_pos, cell_bottom_left_corner, cell_top_right_corner);
 
-    // Calculate distance between particle and closest point
+    // Calculate distance between particles and closest point
     let distance_vec: vec2<f32> = particle_pos - closest_point;
     let dist_sq: f32 = dot(distance_vec, distance_vec);
 
@@ -349,7 +349,7 @@ fn resolve_cell_collisons(cell_hash: u32, start: u32) {
                 let inv_mass_1 = 1/obj_1_radius;
                 let inv_mass_2 = 1/obj_2_radius;
 
-                // Displace each particle by half of the penetration depth along the collision normal.
+                // Displace each particles by half of the penetration depth along the collision normal.
                 let displacement = correction_vector * (inv_mass_1 / (inv_mass_1+inv_mass_2));
                 let displacement_2 = correction_vector * (inv_mass_2 / (inv_mass_1+inv_mass_2));
 

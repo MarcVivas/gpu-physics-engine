@@ -29,7 +29,7 @@ fn verlet_integration(@builtin(global_invocation_id) global_id: vec3<u32>) {
         return;
     }
 
-    // Get the particle's data
+    // Get the particles's data
     let current_position = positions[index];
     let previous_position = previous_positions[index];
 
@@ -111,7 +111,7 @@ model: VertexInput, instance: InstanceInput, radius: RadiusInput, color: ColorIn
 const MAX_VELOCITY = 0.8;
 fn get_particle_color(particle_velocity: vec2<f32>) -> vec3<f32>{
 
-    // Compute the magnitude of the particle's velocity
+    // Compute the magnitude of the particles's velocity
     let velocity_magnitude = length(particle_velocity);
 
     // Compute a normalized velocity value between 0 and 1

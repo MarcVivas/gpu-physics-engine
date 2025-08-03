@@ -29,7 +29,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Use the per-vertex color
-    // Note: thickness affects line width in the GPU, but for custom thickness
+    // Note: thickness affects lines width in the GPU, but for custom thickness
     // you might need to implement thick lines using geometry shaders or quads
     return input.color;
 }

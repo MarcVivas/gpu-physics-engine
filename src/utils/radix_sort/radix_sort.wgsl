@@ -170,7 +170,7 @@ fn prefix_reduce_smem(lid: u32) {
 }
 @compute @workgroup_size({prefix_wg_size})
 fn prefix_histogram(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
-    // the work group  id is the pass, and is inverted in the next line, such that pass 3 is at the first position in the histogram buffer
+    // the work group  id is the pass, and is inverted in the next lines, such that pass 3 is at the first position in the histogram buffer
     let histogram_base = (rs_keyval_size - 1u - wid.x) * rs_radix_size;
     let histogram_offset = histogram_base + lid.x;
 
@@ -258,10 +258,10 @@ fn scatter(pass_: u32, lid: vec3<u32>, gid: vec3<u32>, wid: vec3<u32>, nwg: vec3
     let partition_mask_reduction = partition_status_reduction << 30u;
     let partition_mask_prefix = partition_status_prefix << 30u;
     // kv_filling is done in the scatter_even and scatter_odd functions to account for front and backbuffer switch
-    // in the reference there is a nulling of the smmem here, was moved to line 251 as smem is used in the code until then
+    // in the reference there is a nulling of the smmem here, was moved to lines 251 as smem is used in the code until then
 
     // The following implements conceptually the same as the
-    // Emulate a "match" operation with broadcasts for small subgroup sizes (line 665 ff in scatter.glsl)
+    // Emulate a "match" operation with broadcasts for small subgroup sizes (lines 665 ff in scatter.glsl)
     // The difference however is, that instead of using subrgoupBroadcast each thread stores
     // its current number in the smem at lid.x, and then looks up their neighbouring values of the subgroup
     let subgroup_id = lid.x / histogram_sg_size;

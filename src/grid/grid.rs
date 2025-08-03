@@ -1,6 +1,6 @@
 use glam::{Vec2, Vec4};
-use crate::game_data::line::lines::Lines;
-use crate::game_data::particle::particle_system::ParticleSystem;
+use crate::lines::lines::Lines;
+use crate::particles::particle_system::ParticleSystem;
 use crate::renderer::camera::Camera;
 use crate::renderer::renderable::Renderable;
 use crate::renderer::wgpu_context::WgpuContext;
@@ -74,7 +74,7 @@ impl Grid {
     pub fn new_without_camera(wgpu_context: &WgpuContext, max_obj_radius: f32, particle_system: Rc<RefCell<ParticleSystem>>) -> Grid{
         let total_particles: usize = particle_system.borrow().len();
         let dim: u32 = 2;
-        let buffer_len = total_particles * 2usize.pow(dim); // A particle can be in 2**dim different cells
+        let buffer_len = total_particles * 2usize.pow(dim); // A particles can be in 2**dim different cells
         let cell_size = Self::gen_cell_size(max_obj_radius);
 
         
@@ -410,7 +410,7 @@ impl Grid {
 
 
     /// Refreshes the grid when elements have been added or removed.
-    /// This function is called when the particle system is updated.
+    /// This function is called when the particles system is updated.
     pub fn refresh_grid(&mut self, wgpu_context: &WgpuContext, camera: &Camera, world_dimensions: Vec2, max_obj_radius: f32, particles_added: usize){
         let cell_size = Grid::gen_cell_size(max_obj_radius);
         
@@ -439,7 +439,7 @@ impl Grid {
 
     /// Step 1: Constructs the map of cell ids to objects.
     /// Key: cell id; Value: Object id
-    /// Each particle would have a max of 4 cell ids (in 2D space)
+    /// Each particles would have a max of 4 cell ids (in 2D space)
     pub fn build_cell_ids(&self, encoder: &mut wgpu::CommandEncoder, total_particles: u32){
         self.grid_kernels.build_cell_ids_shader.dispatch_by_items(
             encoder,

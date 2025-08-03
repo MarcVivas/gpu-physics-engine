@@ -1,5 +1,4 @@
-
-use game_engine::app::run; 
+use game_engine::app;
 fn main() {
-    run().unwrap();
+    app::run().unwrap();
 }

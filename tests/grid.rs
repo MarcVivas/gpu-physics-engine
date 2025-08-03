@@ -1,6 +1,6 @@
 mod common;
 
-use game_engine::game::grid::grid::Grid;
+use game_engine::grid::grid::Grid;
 use glam::Vec2;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -84,7 +84,7 @@ fn build_grid_case_1(wgpu_context: &WgpuContext) -> (Grid, u32) {
     ];
     let num_particles = particle_positions.len();
     
-    // Give each particle a different radius to ensure the radius buffer is read correctly.
+    // Give each particles a different radius to ensure the radius buffer is read correctly.
     let particle_radii = vec![10.0, 8.0, 1.0];
 
     let particle_system = common::create_test_particle_system(
@@ -200,7 +200,7 @@ fn build_grid_case_2(wgpu_context: &WgpuContext, positions: Vec<Vec2>) -> (Grid,
 
     let num_particles = positions.len();
 
-    // Give each particle a different radius to ensure the radius buffer is read correctly.
+    // Give each particles a different radius to ensure the radius buffer is read correctly.
     let particle_radii = vec![10.0; num_particles];
 
     let particle_system = common::create_test_particle_system(

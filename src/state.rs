@@ -7,15 +7,15 @@ use winit::event::{KeyEvent, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
-use crate::game_data::particle::particle_system::ParticleSystem;
-use crate::game::input_manager::InputManager;
-use crate::renderer::render_timer::RenderTimer;
+use crate::particles::particle_system::ParticleSystem;
+use crate::utils::input_manager::InputManager;
+use crate::utils::render_timer::RenderTimer;
 use crate::renderer::renderer::Renderer;
 use crate::renderer::wgpu_context::WgpuContext;
-use crate::game::grid::grid::Grid;
+use crate::grid::grid::Grid;
 use crate::utils::gpu_timer::GpuTimer;
 
-// This will store the state of the game
+// This will store the state of the main
 pub struct State {
     world_size: Vec2,
     wgpu_context: WgpuContext,

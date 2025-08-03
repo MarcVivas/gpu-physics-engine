@@ -8,7 +8,7 @@ use winit::{
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
-use crate::game::state::State;
+use crate::state::State;
 
 pub struct App {
     #[cfg(target_arch = "wasm32")]

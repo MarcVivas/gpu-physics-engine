@@ -230,7 +230,7 @@ impl ParticleSystem {
                     },
                     count: None,
                 },
-                // Binding 1: The particle's current positions
+                // Binding 1: The particles's current positions
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -241,7 +241,7 @@ impl ParticleSystem {
                     },
                     count: None,
                 },
-                // Binding 2: The particle velocities
+                // Binding 2: The particles velocities
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -252,7 +252,7 @@ impl ParticleSystem {
                     },
                     count: None,
                 },
-                // Binding 3: The particle's previous positions
+                // Binding 3: The particles's previous positions
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -263,7 +263,7 @@ impl ParticleSystem {
                     },
                     count: None,
                 },
-                // Binding 4: The particle's radius
+                // Binding 4: The particles's radius
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -368,7 +368,7 @@ impl ParticleSystem {
 
             self.current_positions.push(pos.clone(), wgpu_context);
             self.previous_positions.push(pos, wgpu_context);
-            // ... rest of your particle property generation
+            // ... rest of your particles property generation
             self.velocities.push(
                 Vec2::new(random_range(1.0..10.0), random_range(1.0..10.0)),
                 wgpu_context

@@ -67,7 +67,7 @@ impl Lines {
                 compilation_options: wgpu::PipelineCompilationOptions::default()
             }),
             primitive: wgpu::PrimitiveState{
-                topology: wgpu::PrimitiveTopology::LineList, // Direct line rendering
+                topology: wgpu::PrimitiveTopology::LineList, // Direct lines rendering
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: None, // No culling for lines
