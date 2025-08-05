@@ -1,5 +1,6 @@
     use glam::{Mat4, Vec3};
     use wgpu::util::DeviceExt;
+    use winit::dpi::PhysicalPosition;
 
     pub struct Camera {
         pub position: Vec3,
@@ -119,9 +120,18 @@
             self.camera_uniform.update_view_proj(&view_proj);
             view_proj
         }
+        
+        
+        pub fn move_camera(&mut self, key: KeyCode, is_pressed: bool) {
+            self.camera_controller.move_camera(key, is_pressed);
+        }
 
-        pub fn process_events(&mut self, event: &winit::event::WindowEvent) -> bool {
-            self.camera_controller.process_events(event)
+        pub fn zoom_camera(&mut self, mouse_scroll_delta: MouseScrollDelta) {
+            self.camera_controller.zoom_camera(mouse_scroll_delta);
+        }
+
+        pub fn set_camera_zoom_position(&mut self, pos: Option<PhysicalPosition<f64>>) {
+            self.camera_controller.set_camera_zoom_position(pos);
         }
 
         pub fn update(&mut self, dt: f32) {
@@ -187,7 +197,6 @@
 
         pub fn camera_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
             &self.camera_bind_group_layout
-
         }
 
     }
@@ -244,44 +253,39 @@
                 screen_size: glam::Vec2::new(800.0, 600.0), // Default size
             }
         }
-
-        fn process_events(&mut self, event: &WindowEvent) -> bool {
-            match event {
-                WindowEvent::KeyboardInput { event: KeyEvent { physical_key, state, .. }, .. } => {
-                    let is_pressed = *state == winit::event::ElementState::Pressed;
-                    match physical_key {
-                        PhysicalKey::Code(KeyCode::KeyW) | PhysicalKey::Code(KeyCode::ArrowUp) => {
-                            self.is_up_pressed = is_pressed;
-                            true
-                        }
-                        PhysicalKey::Code(KeyCode::KeyS) | PhysicalKey::Code(KeyCode::ArrowDown) => {
-                            self.is_down_pressed = is_pressed;
-                            true
-                        }
-                        PhysicalKey::Code(KeyCode::KeyA) | PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                            self.is_left_pressed = is_pressed;
-                            true
-                        }
-                        PhysicalKey::Code(KeyCode::KeyD) | PhysicalKey::Code(KeyCode::ArrowRight) => {
-                            self.is_right_pressed = is_pressed;
-                            true
-                        }
-                        _ => false,
-                    }
-                }
-                WindowEvent::MouseWheel { delta, .. } => {
-                    self.scroll_delta += match delta {
-                        MouseScrollDelta::LineDelta(_, y) => *y,
-                        MouseScrollDelta::PixelDelta(pos) => pos.y as f32 * 0.01,
-                    };
+        
+        fn move_camera(&mut self, key: KeyCode, is_pressed: bool) -> bool {
+            match key {
+                KeyCode::KeyW => {
+                    self.is_up_pressed = is_pressed;
                     true
                 }
-                WindowEvent::CursorMoved { position, .. } => {
-                    self.mouse_position = glam::Vec2::new(position.x as f32, position.y as f32);
-                    false // Don't consume this event
+                KeyCode::KeyS => {
+                    self.is_down_pressed = is_pressed;
+                    true
+                }
+                KeyCode::KeyA => {
+                    self.is_left_pressed = is_pressed;
+                    true
+                }
+                KeyCode::KeyD => {
+                    self.is_right_pressed = is_pressed;
+                    true
                 }
                 _ => false,
             }
+        }
+        
+        pub fn zoom_camera(&mut self, mouse_scroll_delta: MouseScrollDelta){
+            self.scroll_delta += match mouse_scroll_delta {
+                MouseScrollDelta::LineDelta(_, y) => y,
+                MouseScrollDelta::PixelDelta(pos) => pos.y as f32 * 0.01,
+            };
+        }
+
+        pub fn set_camera_zoom_position(&mut self, pos: Option<PhysicalPosition<f64>>) {
+            let position = pos.unwrap();
+            self.mouse_position = glam::Vec2::new(position.x as f32, position.y as f32);
         }
 
 

@@ -374,7 +374,7 @@ impl ParticleSystem {
                 wgpu_context
             );
 
-            let rng_radius_particle = random_range(1.0..10.0); // Renamed to avoid conflict
+            let rng_radius_particle = random_range(1.0..=1.0); // Renamed to avoid conflict
             self.radius.push(
                 rng_radius_particle,
                 wgpu_context

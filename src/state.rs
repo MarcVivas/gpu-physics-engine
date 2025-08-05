@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::sync::{Arc};
 use glam::Vec2;
 use winit::dpi;
-use winit::event::{KeyEvent, WindowEvent};
+use winit::event::{KeyEvent, MouseScrollDelta, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
@@ -15,12 +15,11 @@ use crate::renderer::wgpu_context::WgpuContext;
 use crate::grid::grid::Grid;
 use crate::utils::gpu_timer::GpuTimer;
 
-// This will store the state of the main
+// This will store the state of the program
 pub struct State {
     world_size: Vec2,
     wgpu_context: WgpuContext,
     render_timer: RenderTimer,
-    input_manager: InputManager,
     renderer: Renderer,
     particles: Rc<RefCell<ParticleSystem>>,
     grid: Rc<RefCell<Grid>>,
@@ -41,7 +40,6 @@ impl State {
         renderer.add_renderable(grid.clone());
 
         let render_timer = RenderTimer::new();
-        let input_manager = InputManager::new();
 
         let mouse_position = None;
         
@@ -51,7 +49,6 @@ impl State {
             world_size,
             wgpu_context,
             render_timer,
-            input_manager,
             particles,
             renderer,
             mouse_position,
@@ -61,25 +58,13 @@ impl State {
 
     }
 
-
+    
+    
     pub fn render_loop(&mut self, event: &WindowEvent, event_loop: &ActiveEventLoop){
-        self.renderer.process_events(event);
-
         match event {
+            WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size ) => self.wgpu_context.resize(size.width, size.height),
-            WindowEvent::RedrawRequested => {
-                self.update();
-                match self.render() {
-                    Ok(_) => {}
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                        let size = self.wgpu_context.window_size();
-                        self.wgpu_context.resize(size.width, size.height);
-                    }
-                    Err(e) => {
-                        log::error!("Unable to render: {:?}", e);
-                    }
-                }
-            },
+            WindowEvent::RedrawRequested => self.update_and_redraw(),
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -88,37 +73,28 @@ impl State {
                         ..
                     },
                 ..
-            } => {
-                match (code, key_state.is_pressed()) {
-                    (KeyCode::Escape, true) => event_loop.exit(),
-                    (KeyCode::KeyP, true) => {
-                        let prev_num_particles = self.particles.borrow().positions().len();
-                        self.particles.borrow_mut().add_particles(
-                            &self.renderer.camera().screen_to_world(Vec2::new(self.mouse_position.unwrap().x as f32, self.mouse_position.unwrap().y as f32)),
-                            &self.wgpu_context
-                        );
-                        let particles_added = self.particles.borrow().positions().len() - prev_num_particles;
-                        self.grid.borrow_mut().refresh_grid(&self.wgpu_context, self.renderer.camera(), self.world_size, self.particles.borrow().get_max_radius(), particles_added);
-                    },
-                    (KeyCode::KeyG, true) => {
-                        self.grid.borrow_mut().render_grid();
-                    }
-
-                    _ => {}
-                }
-
-            },
-            WindowEvent::CursorMoved { position, .. } => {
-                // Update the stored mouse position
-                self.mouse_position = Some(*position);
-            },
-            _ => {
-                // Handle global input through InputManager (no renderer needed)
-                self.input_manager.manage_input(event, event_loop);
+            } => InputManager::process_keyboard_input(self, event_loop, code, key_state),
+            WindowEvent::CursorMoved { position, .. } => InputManager::process_cursor_moved(self, position),
+            WindowEvent::MouseInput {state: mouse_state, button: mouse_button, ..} => InputManager::process_mouse_input(self, mouse_state, mouse_button),
+            WindowEvent::MouseWheel { delta, .. } => InputManager::process_mouse_wheel(self, *delta), 
+            _ => {}
+        }
+    }
+    
+    fn update_and_redraw(&mut self) {
+        self.update();
+        match self.render() {
+            Ok(_) => {}
+            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                let size = self.wgpu_context.window_size();
+                self.wgpu_context.resize(size.width, size.height);
+            }
+            Err(e) => {
+                log::error!("Unable to render: {:?}", e);
             }
         }
-
     }
+    
     #[cfg(feature = "benchmark")]
     fn update(&mut self){
         let dt = self.render_timer.get_delta().as_secs_f32();
@@ -139,6 +115,46 @@ impl State {
     }
 }
 
+impl State {
+    pub fn get_particles(&self) -> Rc<RefCell<ParticleSystem>> {
+        self.particles.clone()
+    }
+    pub fn get_grid(&self) -> Rc<RefCell<Grid>> {
+        self.grid.clone()
+    }
+    pub fn get_mouse_position(&self) -> Option<dpi::PhysicalPosition<f64>> {
+        self.mouse_position
+    }
+    pub fn get_wgpu_context(&self) -> &WgpuContext {
+        &self.wgpu_context
+    }
+    
+    pub fn get_renderer(&self) -> &Renderer {
+        &self.renderer
+    }
+    
+    pub fn get_world_size(&self) -> Vec2 {
+        self.world_size
+    }
+}
+
+impl State {
+    pub fn set_mouse_position(&mut self, position: Option<dpi::PhysicalPosition<f64>>) {
+        self.mouse_position = position;
+        self.renderer.set_camera_zoom_position(position);
+    }
+}
+
+impl State {
+    pub fn move_camera(&mut self, key: KeyCode, is_pressed: bool){
+        self.renderer.move_camera(key, is_pressed);
+    }
+    pub fn zoom_camera(&mut self, mouse_scroll_delta: MouseScrollDelta){
+        self.renderer.zoom_camera(mouse_scroll_delta);
+    }
+}
+
+#[cfg(feature = "benchmark")]
 impl Drop for State {
     fn drop(&mut self) {
         self.gpu_timer.report(&self.wgpu_context);

@@ -1,6 +1,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::renderer::camera::{Camera};
+use winit::dpi::PhysicalPosition;
+use winit::event::MouseScrollDelta;
+use winit::keyboard::{Key, KeyCode};
+use crate::renderer::camera::{Camera, CameraController};
 use crate::renderer::renderable::Renderable;
 use crate::renderer::wgpu_context::WgpuContext;
 use crate::utils::gpu_timer::GpuTimer;
@@ -82,10 +85,19 @@ impl Renderer {
     pub fn camera(&self) -> &Camera {
         &self.camera
     }
-
-    pub fn process_events(&mut self, event: &winit::event::WindowEvent) -> bool {
-        self.camera.process_events(event)
+    
+    pub fn move_camera(&mut self, key: KeyCode, is_pressed: bool){
+        self.camera.move_camera(key, is_pressed);
     }
+
+    pub fn zoom_camera(&mut self, mouse_scroll_delta: MouseScrollDelta) {
+        self.camera.zoom_camera(mouse_scroll_delta);   
+    }
+
+    pub fn set_camera_zoom_position(&mut self, pos: Option<PhysicalPosition<f64>>) {
+        self.camera.set_camera_zoom_position(pos);
+    }
+    
 
     // Update renderables
     #[cfg(feature = "benchmark")]
