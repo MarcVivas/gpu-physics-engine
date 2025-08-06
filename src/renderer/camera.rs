@@ -1,4 +1,4 @@
-    use glam::{Mat4, Vec3};
+    use glam::{Mat4, Vec2, Vec3};
     use wgpu::util::DeviceExt;
     use winit::dpi::PhysicalPosition;
 
@@ -33,8 +33,8 @@
 
             let window_size = wgpu_context.window_size();
 
-            let screen_width = window_size.width as f32;
-            let screen_height = window_size.height as f32;
+            let screen_width = window_size.x;
+            let screen_height = window_size.y;
 
             // Calculate zoom based on width and height, and pick the smaller one to ensure it all fits
             let zoom_x = screen_width / world_width;
@@ -96,13 +96,13 @@
             }
         }
 
-        pub fn build_view_projection_matrix(&mut self, screen_width: f32, screen_height: f32) -> Mat4 {
-            // Update screen size in controller for zoom-to-cursor calculations
-            self.camera_controller.screen_size = glam::Vec2::new(screen_width, screen_height);
-
+        pub fn build_view_projection_matrix(&mut self, screen_size: &Vec2) -> Mat4 {
             // Create view matrix - invert camera position to move the world opposite to camera
             let view = Mat4::from_translation(-self.position);
 
+            let screen_width = screen_size.x;
+            let screen_height = screen_size.y;
+            
             // Create symmetric orthographic projection centered around origin
             let half_width = screen_width / (2.0 * self.zoom);
             let half_height = screen_height / (2.0 * self.zoom);
@@ -134,7 +134,7 @@
             self.camera_controller.set_camera_zoom_position(pos);
         }
 
-        pub fn update(&mut self, dt: f32) {
+        pub fn update(&mut self, dt: f32, screen_size: &Vec2) {
             let move_speed = self.camera_controller.speed * dt / self.zoom;
 
             if self.camera_controller.is_up_pressed { self.position.y += move_speed; }
@@ -144,7 +144,7 @@
 
             if self.camera_controller.scroll_delta != 0.0 {
                 // 1. Get the world coordinates of the mouse before zooming
-                let mouse_world_pos_before_zoom = self.screen_to_world(self.camera_controller.mouse_position);
+                let mouse_world_pos_before_zoom = self.screen_to_world(screen_size, &self.camera_controller.mouse_position);
 
                 // 2. Calculate the new zoom level
                 let zoom_factor = 1.0 + (self.camera_controller.scroll_delta * self.camera_controller.zoom_sensitivity);
@@ -153,7 +153,7 @@
                 self.zoom = self.zoom.clamp(0.1, 100.0);
 
                 // 3. Get the world coordinates of the mouse after zooming
-                let mouse_world_pos_after_zoom = self.screen_to_world(self.camera_controller.mouse_position);
+                let mouse_world_pos_after_zoom = self.screen_to_world(screen_size, &self.camera_controller.mouse_position);
 
                 // 4. Calculate the difference (how much the world shifted under the cursor)
                 let world_delta = mouse_world_pos_before_zoom - mouse_world_pos_after_zoom;
@@ -166,9 +166,7 @@
             }
         }
 
-        pub fn screen_to_world(&self, screen_pos: glam::Vec2) -> glam::Vec2 {
-            let screen_size = self.camera_controller.screen_size;
-
+        pub fn screen_to_world(&self, screen_size: &Vec2, screen_pos: &Vec2) -> Vec2 {
             // Convert screen coordinates to normalized device coordinates (-1 to 1)
             let ndc_x = (screen_pos.x / screen_size.x) * 2.0 - 1.0;
             let ndc_y = 1.0 - (screen_pos.y / screen_size.y) * 2.0; // Flip Y axis
@@ -179,8 +177,8 @@
 
             let world_x = self.position.x + ndc_x * half_width;
             let world_y = self.position.y + ndc_y * half_height;
-
-            glam::Vec2::new(world_x, world_y)
+            
+            Vec2::new(world_x, world_y)
         }
 
         pub fn binding_group(&self) -> &wgpu::BindGroup {
@@ -236,7 +234,6 @@
         zoom_sensitivity: f32,
         scroll_delta: f32, // New field to store scroll amount
         mouse_position: glam::Vec2, // Track mouse position for zoom-to-cursor
-        screen_size: glam::Vec2, // Track screen size for coordinate conversion
     }
 
     impl CameraController {
@@ -250,7 +247,6 @@
                 zoom_sensitivity,
                 scroll_delta: 0.0,
                 mouse_position: glam::Vec2::ZERO,
-                screen_size: glam::Vec2::new(800.0, 600.0), // Default size
             }
         }
         

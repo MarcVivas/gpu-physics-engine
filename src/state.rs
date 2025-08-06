@@ -1,9 +1,10 @@
 use std::cell::RefCell;
+use std::ptr::with_exposed_provenance;
 use std::rc::Rc;
 use std::sync::{Arc};
 use glam::Vec2;
 use winit::dpi;
-use winit::event::{KeyEvent, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::Window;
@@ -87,7 +88,7 @@ impl State {
             Ok(_) => {}
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                 let size = self.wgpu_context.window_size();
-                self.wgpu_context.resize(size.width, size.height);
+                self.wgpu_context.resize(size.x as u32, size.y as u32);
             }
             Err(e) => {
                 log::error!("Unable to render: {:?}", e);
@@ -142,6 +143,8 @@ impl State {
     pub fn set_mouse_position(&mut self, position: Option<dpi::PhysicalPosition<f64>>) {
         self.mouse_position = position;
         self.renderer.set_camera_zoom_position(position);
+        let world_position = self.get_renderer().camera().screen_to_world(&self.get_wgpu_context().window_size(), &Vec2::new(self.get_mouse_position().unwrap().x as f32, self.get_mouse_position().unwrap().y as f32));
+        self.particles.borrow_mut().mouse_move_callback(&self.wgpu_context, world_position);
     }
 }
 
@@ -151,6 +154,14 @@ impl State {
     }
     pub fn zoom_camera(&mut self, mouse_scroll_delta: MouseScrollDelta){
         self.renderer.zoom_camera(mouse_scroll_delta);
+    }
+    
+    pub fn mouse_click_callback(&mut self, mouse_state: &ElementState, button: &MouseButton){
+        if button == &MouseButton::Left {
+            let position = self.get_renderer().camera().screen_to_world(&self.get_wgpu_context().window_size(), &Vec2::new(self.get_mouse_position().unwrap().x as f32, self.get_mouse_position().unwrap().y as f32));
+            self.particles.borrow_mut().mouse_click_callback(&self.wgpu_context, mouse_state, position);
+        }
+        
     }
 }
 

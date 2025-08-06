@@ -1,9 +1,12 @@
 use glam::{Vec2, Vec4};
 use rand::{random_range, Rng};
 use wgpu::hal::DynCommandEncoder;
+use winit::event::{ElementState, MouseButton};
 use crate::{renderer::{camera::Camera, renderable::Renderable}, utils::gpu_buffer::GpuBuffer};
 use crate::renderer::wgpu_context::WgpuContext;
 use crate::utils::compute_shader::ComputeShader;
+
+
 use crate::utils::gpu_timer::GpuTimer;
 
 const WORKGROUP_SIZE: (u32, u32, u32) = (64, 1, 1);
@@ -27,12 +30,13 @@ struct SimParams {
     delta_time: f32,
     world_width: f32,
     world_height: f32,
-    _padding: f32,
+    is_mouse_pressed: u32,
+    mouse_pos: Vec2,
 }
 
 impl ParticleSystem {
     pub fn new(wgpu_context: &WgpuContext, camera: &Camera, world_size: Vec2) -> Self {
-        const NUM_PARTICLES: usize = 6;
+        const NUM_PARTICLES: usize = 5000000;
         let world_width: f32 = world_size.x;
         let world_height: f32 = world_size.y;
 
@@ -144,7 +148,7 @@ impl ParticleSystem {
 
         let sim_params_buffer = GpuBuffer::new(
             wgpu_context,
-            vec![SimParams { delta_time: 0.0, world_width, world_height, _padding: 0.0 }],
+            vec![SimParams { delta_time: 0.0, world_width, world_height, is_mouse_pressed: 0, mouse_pos: Vec2::new(0.0, 0.0) }],
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         );
 
@@ -175,7 +179,7 @@ impl ParticleSystem {
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST
         );
         let max_radius: f32 = radii.data().iter().max_by(|x, y| x.abs().partial_cmp(&y.abs()).unwrap()).unwrap().clone();
-        let sim_params_buffer = GpuBuffer::new(wgpu_context, vec![SimParams { delta_time: 0.0, world_width: 1920.0, world_height: 1080.0, _padding: 0.0 }], wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
+        let sim_params_buffer = GpuBuffer::new(wgpu_context, vec![SimParams { delta_time: 0.0, world_width: 1920.0, world_height: 1080.0, is_mouse_pressed: 0, mouse_pos: Vec2::new(0.0, 0.0) }], wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
         let previous_positions = GpuBuffer::new(wgpu_context, current_positions.data().clone(), wgpu::BufferUsages::STORAGE);
         let integration_pass = Self::gen_integration_pass(wgpu_context, &velocities, &sim_params_buffer, &current_positions, &previous_positions, &radii);
         Self {
@@ -188,7 +192,7 @@ impl ParticleSystem {
             max_radius,
             colors: GpuBuffer::new(wgpu_context, vec![glam::vec4(0.1, 0.4, 0.5, 1.0)], wgpu::BufferUsages::VERTEX),
             render_pipeline: None,
-            sim_params_buffer: GpuBuffer::new(wgpu_context, vec![SimParams { delta_time: 0.0, world_width: 1920.0, world_height: 1080.0, _padding: 0.0 }], wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST),
+            sim_params_buffer,
             integration_pass,
         }
     }
@@ -417,7 +421,37 @@ impl ParticleSystem {
             }));
         println!("Total particles: {}", self.current_positions.len());
     }
+    pub fn mouse_click_callback(&mut self, wgpu_context: &WgpuContext, mouse_state: &ElementState, position: Vec2){
+        let old_sim_params = self.sim_params_buffer.data()[0];
+
+        let sim_params = SimParams {
+            delta_time: old_sim_params.delta_time,
+            world_width: old_sim_params.world_width,
+            world_height: old_sim_params.world_height,
+            is_mouse_pressed: mouse_state.is_pressed() as u32,
+            mouse_pos: position,
+        };
+        self.sim_params_buffer.replace_elem(sim_params, 0, wgpu_context);
+    }
+    pub fn mouse_move_callback(&mut self, wgpu_context: &WgpuContext, position: Vec2){
+        let old_sim_params = self.sim_params_buffer.data()[0];
+        
+        if old_sim_params.is_mouse_pressed == 1 {
+            let sim_params = SimParams {
+                delta_time: old_sim_params.delta_time,
+                world_width: old_sim_params.world_width,
+                world_height: old_sim_params.world_height,
+                is_mouse_pressed: old_sim_params.is_mouse_pressed,
+                mouse_pos: position,
+            };
+            self.sim_params_buffer.replace_elem(sim_params, 0, wgpu_context);
+        }
+
+
+    }
 }
+
+
 
 impl Renderable for ParticleSystem {
     fn draw(&self, render_pass: &mut wgpu::RenderPass, camera: &Camera){
@@ -470,13 +504,16 @@ impl Renderable for ParticleSystem {
     }
 
     #[cfg(not(feature = "benchmark"))]
-    fn update(&mut self, delta_time:f32, world_size:&Vec2, wgpu_context: &WgpuContext) {
+    fn update(&mut self, delta_time:f32, _world_size:&Vec2, wgpu_context: &WgpuContext) {
+        let old_sim_params = self.sim_params_buffer.data()[0];
+        
         // First, update the delta_time in the uniform buffer
         let sim_params = SimParams {
             delta_time,
-            world_width: world_size.x, // Make these constants accessible
-            world_height: world_size.y,
-            _padding: 0.0,
+            world_width: old_sim_params.world_width,
+            world_height: old_sim_params.world_height,
+            is_mouse_pressed: old_sim_params.is_mouse_pressed, 
+            mouse_pos: old_sim_params.mouse_pos,
         };
         wgpu_context.get_queue().write_buffer(
             &self.sim_params_buffer.buffer(),

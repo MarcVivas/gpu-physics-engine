@@ -136,7 +136,7 @@ impl Renderable for Lines {
     }
 
     #[cfg(not(feature = "benchmark"))]
-    fn update(&mut self, _delta_time: f32, _world_size: &glam::Vec2, wgpu_context: &WgpuContext) {
+    fn update(&mut self, _delta_time: f32, _world_size: &glam::Vec2, _wgpu_context: &WgpuContext) {
 
     }
 

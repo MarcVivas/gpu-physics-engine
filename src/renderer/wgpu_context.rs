@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use glam::Vec2;
 use wgpu::Adapter;
 use winit::window::Window;
 
@@ -97,11 +98,12 @@ impl WgpuContext {
         })
     }
     
-    pub fn window_size(&self) -> winit::dpi::PhysicalSize<u32> {
+    pub fn window_size(&self) -> Vec2 {
         if self.surface_manager.is_none() {
-            return winit::dpi::PhysicalSize::new(0, 0);
+            return Vec2::ZERO;
         }
-        self.surface_manager.as_ref().expect("No surface in this context").window_size()
+        let size = self.surface_manager.as_ref().expect("No surface in this context").window_size();
+        Vec2::new(size.width as f32, size.height as f32)
     }
     
     pub fn resize(&mut self, width: u32, height: u32) {

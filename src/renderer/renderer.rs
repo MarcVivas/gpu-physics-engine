@@ -115,7 +115,7 @@ impl Renderer {
     #[cfg(not(feature = "benchmark"))]
     pub fn update(&mut self, dt: f32, wgpu_context: &WgpuContext, world_size: &glam::Vec2) {
         // Update camera based on input and delta time
-        self.camera.update(dt);
+        self.camera.update(dt, &wgpu_context.window_size());
         for renderable in &mut self.renderables {
             renderable.borrow_mut().update(dt, world_size, wgpu_context);
         }
@@ -125,8 +125,7 @@ impl Renderer {
 
     pub fn update_camera_matrices(&mut self, wgpu_context: &WgpuContext) {
         self.camera.build_view_projection_matrix(
-            wgpu_context.window_size().width as f32,
-            wgpu_context.window_size().height as f32
+            &wgpu_context.window_size(),
         );
         wgpu_context.get_queue().write_buffer(
             &self.camera.camera_buffer(),

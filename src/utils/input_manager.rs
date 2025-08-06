@@ -16,7 +16,7 @@ impl InputManager {
             (KeyCode::KeyP, true) => {
                 let prev_num_particles = state.get_particles().borrow().positions().len();
                 state.get_particles().borrow_mut().add_particles(
-                    &state.get_renderer().camera().screen_to_world(Vec2::new(state.get_mouse_position().unwrap().x as f32, state.get_mouse_position().unwrap().y as f32)),
+                    &state.get_renderer().camera().screen_to_world(&state.get_wgpu_context().window_size(), &Vec2::new(state.get_mouse_position().unwrap().x as f32, state.get_mouse_position().unwrap().y as f32)),
                     state.get_wgpu_context()
                 );
                 let particles_added = state.get_particles().borrow().positions().len() - prev_num_particles;
@@ -61,8 +61,7 @@ impl InputManager {
     
     /// Manages mouse button inputs from the user
     pub fn process_mouse_input(state: &mut State, mouse_state: &ElementState, button: &MouseButton){
-        println!("{:?}", mouse_state);
-        println!("{:?}", button);
+        state.mouse_click_callback(mouse_state, button);
     }
     
     /// Manages mouse wheel inputs from the user

@@ -3,6 +3,8 @@ struct SimParams {
     delta_time: f32,
     world_width: f32,
     world_height: f32,
+    is_mouse_pressed: u32,
+    mouse_pos: vec2<f32>,
 };
 
 // Bindings for the Compute Shader
@@ -18,6 +20,7 @@ struct SimParams {
 const WORKGROUP_SIZE: u32 = 64u;
 
 const FORCE_OF_GRAVITY: vec2<f32> = vec2<f32>(0.0, -39.3);
+const MOUSE_ATTRACTION_STRENGTH: f32 = 150.0;
 
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn verlet_integration(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -44,8 +47,25 @@ fn verlet_integration(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let velocity = current_position - previous_position;
     velocities[index] = velocity;
 
+    var total_acceleration = FORCE_OF_GRAVITY;
+
+    if (sim_params.is_mouse_pressed == 1u) {
+        // Calculate a vector pointing from the particle to the mouse
+        let direction_to_mouse = sim_params.mouse_pos - current_position;
+
+        // Normalize the direction to get a unit vector, then scale by our strength constant.
+        // This creates the mouse attraction acceleration.
+        let mouse_attraction_accel = normalize(direction_to_mouse) * MOUSE_ATTRACTION_STRENGTH;
+
+        // Add the mouse attraction to the total acceleration
+        total_acceleration += mouse_attraction_accel;
+
+    }
+
+    let dt_squared = 0.003*0.003;
+
     // Predict the next position without applying constraints
-    var predicted_position = current_position + velocity + FORCE_OF_GRAVITY * 0.003 * 0.003;
+    var predicted_position = current_position + velocity + total_acceleration * dt_squared;
 
 
     let particle_radius = radius[index];
