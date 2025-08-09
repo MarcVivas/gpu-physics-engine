@@ -8,7 +8,7 @@ A high-performance 2D physics engine built with Rust and wgpu, leveraging GPU co
 - **Spatial Grid Partitioning**: Efficient broad-phase collision detection using GPU-based spatial grids. **Learn more**: [NVIDIA GPU Gems - Broad-Phase Collision Detection](https://developer.nvidia.com/gpugems/gpugems3/part-v-physics-simulation/chapter-32-broad-phase-collision-detection-cuda)
 - **Verlet Integration**: Stable numerical integration for smooth particle motion
 - **Real-time Interaction**: Interactive particle spawning and mouse-based attraction forces
-- **Scalable**: Handle thousands of particles with smooth framerates
+- **Scalable**: Handle millions of particles with high framerates
 
 ## 🎮 Controls
 
@@ -27,6 +27,17 @@ A high-performance 2D physics engine built with Rust and wgpu, leveraging GPU co
 ```bash
 cargo run --release
 ```
+### Tests
+```
+cargo test
+```
+
+### Benchmark
+The benchmark shows the performance for each of the compute shaders at the end of the execution.
+```
+cargo run --release --features benchmark
+```
+
 
 ## 🔧 Implementation Details
 
@@ -52,23 +63,14 @@ The engine employs Verlet integration for numerical stability and energy conserv
 - **OS**: Windows 11
 - **Build**: Release mode (`--release`)
 
-The engine demonstrates excellent scaling characteristics, maintaining smooth framerates even with thousands of active particles thanks to GPU parallelization.
+The engine demonstrates excellent scaling characteristics, maintaining smooth framerates even with millions of active particles thanks to GPU parallelization.
 
 ## 🔮 Future Enhancements
 
 - Compute shaders optimization
 - Rendering optimization
+- Improve physics
 
-## Tests
-```
-cargo test
-```
-
-## Benchmark
-```
-cargo run --release --features benchmark
-```
-Shows the performance of each of the compute shaders at the end of the execution.
 
 ---
 

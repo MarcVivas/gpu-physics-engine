@@ -22,6 +22,9 @@ const WORKGROUP_SIZE: u32 = 64u;
 const FORCE_OF_GRAVITY: vec2<f32> = vec2<f32>(0.0, -39.3);
 const MOUSE_ATTRACTION_STRENGTH: f32 = 150.0;
 
+const DELTA_TIME: f32 = 0.003;
+const DELTA_TIME_SQUARED: f32 = DELTA_TIME * DELTA_TIME;
+
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn verlet_integration(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let index = global_id.x;
@@ -62,10 +65,8 @@ fn verlet_integration(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     }
 
-    let dt_squared = 0.003*0.003;
-
     // Predict the next position without applying constraints
-    var predicted_position = current_position + velocity + total_acceleration * dt_squared;
+    var predicted_position = current_position + velocity + total_acceleration * DELTA_TIME_SQUARED;
 
 
     let particle_radius = radius[index];
@@ -75,6 +76,19 @@ fn verlet_integration(@builtin(global_invocation_id) global_id: vec3<u32>) {
     predicted_position.x = clamp(predicted_position.x, particle_radius, sim_params.world_width - particle_radius);
     predicted_position.y = clamp(predicted_position.y, particle_radius, sim_params.world_height - particle_radius);
 
+    /*
+    // Circle world
+    let world_center = vec2<f32>(sim_params.world_width/2.0, sim_params.world_height/2.0);
+    let world_radius = min(sim_params.world_width/2.0, sim_params.world_height/2.0);
+    let vec_particle_world_center = predicted_position-world_center;
+    let distance_from_center = dot(vec_particle_world_center, vec_particle_world_center);
+    let max_radius =  world_radius - particle_radius;
+
+    if(distance_from_center > max_radius * max_radius){
+            // Move the particle back to the nearest point on the circle's edge
+            predicted_position = world_center + max_radius * normalize(vec_particle_world_center);
+    }
+    */
 
     // Write the updated data back to the buffer
     positions[index] = predicted_position;
@@ -128,7 +142,7 @@ model: VertexInput, instance: InstanceInput, radius: RadiusInput, color: ColorIn
 }
 
 
-const MAX_VELOCITY = 0.8;
+const MAX_VELOCITY = 0.6;
 fn get_particle_color(particle_velocity: vec2<f32>) -> vec3<f32>{
 
     // Compute the magnitude of the particles's velocity
