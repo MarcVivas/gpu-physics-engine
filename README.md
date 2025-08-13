@@ -2,6 +2,11 @@
 
 A high-performance 2D physics engine built with Rust and wgpu, leveraging GPU compute shaders for massive parallel processing of physics simulations.
 
+[![Feature Demo Video Thumbnail](images/image.png)](https://www.youtube.com/watch?v=TxYFeai6B9Q)
+
+[Demo on YouTube](https://www.youtube.com/watch?v=TxYFeai6B9Q)
+
+
 ## ✨ Features
 
 - **GPU-Accelerated**: All physics computations run on the GPU for maximum performance
