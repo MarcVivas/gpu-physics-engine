@@ -1,4 +1,5 @@
 use std::num::NonZeroU32;
+use wgpu::wgt::PollType::WaitForSubmissionIndex;
 use crate::renderer::wgpu_context::WgpuContext;
 use crate::utils::gpu_buffer::GpuBuffer;
 use crate::utils::radix_sort::radix_sort::GPUSorter;
@@ -40,7 +41,7 @@ pub fn guess_workgroup_size(wgpu_context: &WgpuContext) -> Option<u32> {
 
         current_sorter.sort(&mut encoder, queue, None);
         let idx = queue.submit([encoder.finish()]);
-        device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(idx)).unwrap();
+        device.poll(WaitForSubmissionIndex(idx)).unwrap();
 
 
         let sorted_data: Vec<u32> = (0..n).collect();

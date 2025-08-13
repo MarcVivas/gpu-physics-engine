@@ -1,6 +1,7 @@
 use std::mem;
 use crate::renderer::wgpu_context::{WgpuContext};
 use wgpu::{Buffer};
+use wgpu::wgt::PollType::Wait;
 
 #[derive(Debug)]
 pub struct GpuBuffer<T> {
@@ -142,10 +143,8 @@ impl<T: bytemuck::Pod> GpuBuffer<T>{
             sender.send(result).unwrap();
         });
 
-        // 6. Poll the device. This is the crucial step for synchronous execution.
-        // `wgpu::Maintain::Wait` blocks the current thread until the GPU has
-        // finished all queued work, which includes our copy command and the mapping operation.
-        device.poll(wgpu::MaintainBase::Wait).unwrap();
+        device.poll(Wait).unwrap();
+
 
         // 7. Wait for the mapping result to be received from the callback.
         // `recv()` will block until the result is available.
@@ -235,7 +234,7 @@ impl<T: bytemuck::Pod> GpuBuffer<T>{
         });
 
         // Poll the device to ensure the GPU work is completed.
-        device.poll(wgpu::MaintainBase::Wait).unwrap();
+        device.poll(Wait).unwrap();
 
         // 7. Process the result of the mapping.
         match receiver.recv().unwrap() {

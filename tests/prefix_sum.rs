@@ -1,4 +1,5 @@
 use rand::{random_range};
+use wgpu::wgt::PollType::WaitForSubmissionIndex;
 use game_engine::utils::gpu_buffer::GpuBuffer;
 use game_engine::utils::prefix_sum::prefix_sum::PrefixSum;
 
@@ -31,7 +32,7 @@ fn inclusive_prefix_sum_test() {
 
 
     let idx = queue.submit([encoder.finish()]);
-    device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(idx)).unwrap();
+    device.poll(WaitForSubmissionIndex(idx)).unwrap();
 
 
     let result = buffer_data.download(wgpu_context).unwrap();
@@ -73,7 +74,7 @@ fn inclusive_prefix_sum_same_values_test() {
 
 
     let idx = queue.submit([encoder.finish()]);
-    device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(idx)).unwrap();
+    device.poll(WaitForSubmissionIndex(idx)).unwrap();
 
 
     let result = buffer_data.download(wgpu_context).unwrap();
@@ -114,7 +115,7 @@ fn inclusive_prefix_sum_all_zero_test() {
 
 
     let idx = queue.submit([encoder.finish()]);
-    device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(idx)).unwrap();
+    device.poll(WaitForSubmissionIndex(idx)).unwrap();
 
 
     let result = buffer_data.download(wgpu_context).unwrap();
@@ -154,7 +155,7 @@ fn inclusive_prefix_sum_random_test() {
     prefix_sum.execute(wgpu_context, &mut encoder, original_values.len() as u32);
 
     let idx = queue.submit([encoder.finish()]);
-    device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(idx)).unwrap();
+    device.poll(WaitForSubmissionIndex(idx)).unwrap();
 
     let result = buffer_data.download(wgpu_context).unwrap();
     let expected_data: Vec<u32> = original_values.iter().scan(0, |sum, i| {
@@ -194,7 +195,7 @@ fn inclusive_prefix_sum_resize_test() {
 
 
     let idx = queue.submit([encoder.finish()]);
-    device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(idx)).unwrap();
+    device.poll(WaitForSubmissionIndex(idx)).unwrap();
 
 
     let result = buffer_data.download(wgpu_context).unwrap();
@@ -227,7 +228,7 @@ fn inclusive_prefix_sum_resize_test() {
 
 
         let idx = queue.submit([encoder.finish()]);
-        device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(idx)).unwrap();
+        device.poll(WaitForSubmissionIndex(idx)).unwrap();
     }
     
     let result = buffer_data.download(wgpu_context).unwrap();

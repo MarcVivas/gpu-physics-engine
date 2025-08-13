@@ -1,4 +1,5 @@
 use std::num::NonZeroU32;
+use wgpu::wgt::PollType::WaitForSubmissionIndex;
 use game_engine::utils::gpu_buffer::GpuBuffer;
 use game_engine::utils::radix_sort::radix_sort::GPUSorter;
 use game_engine::utils::guess_workgroup_size;
@@ -30,7 +31,7 @@ fn sort_test() {
 
     sorter.sort(&mut encoder, queue, None);
     let idx = queue.submit([encoder.finish()]);
-    device.poll(wgpu::MaintainBase::WaitForSubmissionIndex(idx)).unwrap();
+    device.poll(WaitForSubmissionIndex(idx)).unwrap();
 
 
     let sorted_data: Vec<u32> = (0..n).collect();

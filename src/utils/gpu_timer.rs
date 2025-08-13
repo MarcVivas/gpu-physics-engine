@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use wgpu::wgt::PollType::Wait;
 use crate::renderer::wgpu_context::WgpuContext;
 
 struct ScopeData {
@@ -137,7 +138,7 @@ impl GpuTimer {
             sender.send(v).unwrap();
         });
 
-        device.poll(wgpu::MaintainBase::Wait).unwrap();
+        device.poll(Wait).unwrap();
 
         if let Ok(Ok(())) = receiver.recv() {
             let data = buffer_slice.get_mapped_range();
