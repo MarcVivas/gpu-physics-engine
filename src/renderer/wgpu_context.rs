@@ -9,6 +9,7 @@ pub struct WgpuContext {
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface_manager: Option<SurfaceManager>,
+    adapter: Adapter,
 }
 
 impl WgpuContext {
@@ -37,12 +38,11 @@ impl WgpuContext {
         let surface_manager: Option<SurfaceManager> = Some(SurfaceManager::new(window, &instance, &adapter));
 
       
-        
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor{
                 label: None,
-                required_features: wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS,
+                required_features: wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS | wgpu::Features::SUBGROUP | wgpu::Features::SUBGROUP_BARRIER,
                 required_limits: WgpuContext::get_limits(&adapter),
                 memory_hints: Default::default(),
                 trace: wgpu::Trace::Off,
@@ -53,7 +53,8 @@ impl WgpuContext {
         Ok(Self {
             device,
             queue,
-            surface_manager
+            surface_manager,
+            adapter,
         })
     }
     
@@ -84,7 +85,7 @@ impl WgpuContext {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("Test Device"),
-                    required_features: wgpu::Features::empty(), // Add features if your shaders need them
+                    required_features: wgpu::Features::SUBGROUP | wgpu::Features::SUBGROUP_BARRIER, 
                     required_limits: WgpuContext::get_limits(&adapter),
                     ..Default::default()
                 },
@@ -94,10 +95,13 @@ impl WgpuContext {
         Ok(Self {
             device,
             queue,
-            surface_manager: None, // <-- NO SURFACE MANAGER
+            surface_manager: None,
+            adapter,
         })
     }
-    
+
+
+
     pub fn window_size(&self) -> Vec2 {
         if self.surface_manager.is_none() {
             return Vec2::ZERO;
@@ -127,6 +131,10 @@ impl WgpuContext {
     
     pub fn get_queue(&self) -> &wgpu::Queue {
         &self.queue
+    }
+
+    pub fn get_adapter(&self) -> &Adapter {
+        &self.adapter
     }
     
     pub fn get_surface_config(&self) -> &wgpu::SurfaceConfiguration{

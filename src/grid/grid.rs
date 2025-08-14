@@ -176,6 +176,7 @@ impl Grid {
             bind_group.clone(),
             bind_group_layout.clone(),
             WORKGROUP_SIZE,
+            &vec![],
         );
 
         let count_objects_shader = ComputeShader::new(
@@ -185,6 +186,7 @@ impl Grid {
             bind_group.clone(),
             bind_group_layout.clone(),
             WORKGROUP_SIZE,
+            &vec![],
         );
         
         let build_collision_cells_shader = ComputeShader::new(
@@ -194,6 +196,7 @@ impl Grid {
             bind_group.clone(),
             bind_group_layout.clone(),
             WORKGROUP_SIZE,
+            &vec![],
         );
         
 
@@ -204,9 +207,10 @@ impl Grid {
             bind_group,
             bind_group_layout,
             WORKGROUP_SIZE,
+            &vec![],
         );
         let prefix_sum = PrefixSum::new(wgpu_context, &chunk_counting_buffer);
-        let sorter: GPUSorter = GPUSorter::new(wgpu_context.get_device(), utils::guess_workgroup_size(wgpu_context).unwrap(), NonZeroU32::new(buffer_len as u32).unwrap(), &cell_ids, &object_ids);
+        let sorter: GPUSorter = GPUSorter::new(wgpu_context.get_device(), utils::get_subgroup_size(wgpu_context).unwrap(), NonZeroU32::new(buffer_len as u32).unwrap(), &cell_ids, &object_ids);
 
         Grid {
             dim,

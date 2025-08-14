@@ -19,6 +19,7 @@ impl ComputeShader {
         bind_group: BindGroup,
         bind_group_layout: wgpu::BindGroupLayout,
         workgroup_size: (u32, u32, u32),
+        constants: &Vec<(&str, f64)>,
     ) -> Self {
         let device = wgpu_context.get_device();
         let compute_shader = device.create_shader_module(shader_file);
@@ -35,7 +36,10 @@ impl ComputeShader {
             layout: Some(&pipeline_layout),
             module: &compute_shader,
             entry_point: Some(entry_point),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions{
+                constants: constants.as_slice(),
+                zero_initialize_workgroup_memory: true,
+            },
             cache: None,
         });
         

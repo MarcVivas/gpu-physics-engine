@@ -1,10 +1,8 @@
-// https://developer.nvidia.com/gpugems/gpugems3/part-vi-gpu-computing/chapter-39-parallel-prefix-sum-scan-cuda
+override WORKGROUP_SIZE: u32 = 256;
+override SUBGROUP_SIZE: u32 = 64;
+override SHARED_MEMORY_SIZE: u32 = 64;
 
-const WORKGROUP_SIZE = 256;
-const ELEMENTS_PER_THREAD = 2u;
-const BLOCK_ELEMENTS = (WORKGROUP_SIZE * ELEMENTS_PER_THREAD);
-
-var<workgroup> shared_data: array<u32, BLOCK_ELEMENTS>;
+var<workgroup> shared_data: array<u32, SHARED_MEMORY_SIZE>;
 
 @group(0) @binding(0) var<storage, read_write> data: array<u32>;
 @group(0) @binding(1) var<uniform> num_elems: u32;
@@ -16,113 +14,64 @@ fn prefix_sum_of_each_block(
     @builtin(global_invocation_id) global_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
+    @builtin(subgroup_invocation_id) subgroup_thread_id: u32,
+    @builtin(subgroup_size) subgroup_size: u32,
     ){
 
-    // Each thread works with 2 elements
-    // Get the elements indexes and values.
-    let value_1_idx = workgroup_id.x * BLOCK_ELEMENTS + local_id.x;
-    let value_2_idx = value_1_idx + WORKGROUP_SIZE;
-    let value_1 = get_value(workgroup_id.x * BLOCK_ELEMENTS + local_id.x);
-    let value_2 = get_value(value_2_idx);
+    if global_id.x >= num_elems {return;}
 
-    // Load the elements into shared memory
-    shared_data[local_id.x] = value_1;
-    shared_data[local_id.x + WORKGROUP_SIZE] = value_2;
+    let subgroup_id = local_id.x / subgroup_size;
+    let num_subgroups = WORKGROUP_SIZE / subgroup_size;
+
+    // Load value
+    let value = get_value(global_id.x);
+
+
+    // Subgroup prefix sum
+    let thread_val = subgroupInclusiveAdd(value);
+
+    // The last thread of the subgroup has the total sum of the subgroup prefix sum
+    if subgroup_thread_id == subgroup_size - 1u {
+        // Store the subgroup total sum in shared memory
+        shared_data[subgroup_id] = thread_val;
+    }
     workgroupBarrier();
 
-    upsweep_phase(local_id.x);
+    // The first subgroup does an exclusive prefix sum of the total sums of the subgroups
+    if subgroup_id == 0 {
+        let block_val = select(0, shared_data[subgroup_thread_id], subgroup_thread_id < num_subgroups);
+        let prefix_val = subgroupExclusiveAdd(block_val);
+        if subgroup_thread_id < num_subgroups {
+            shared_data[subgroup_thread_id] = prefix_val;
+        }
+    }
+    workgroupBarrier();
+
+    // Calculate the final value with the subgroup val and the block val
+    let final_value = thread_val + shared_data[subgroup_id];
 
 
     // Only the last thread of the workgroup
     if local_id.x == WORKGROUP_SIZE - 1 {
         // Store the total sum of the block to global memory
-        block_sums[workgroup_id.x] = shared_data[BLOCK_ELEMENTS - 1];
-        // Reset for the down sweep phase
-        shared_data[BLOCK_ELEMENTS - 1] = 0;
+        block_sums[workgroup_id.x] = final_value;
     }
-    workgroupBarrier();
 
-    downsweep_phase(local_id.x);
-
-
-    // Prefix sum of each block completed and stored in shared memory
 
     // Write back to global memory
-
-    // Write back to global memory, WITH GUARDS
-    data[value_1_idx] = shared_data[local_id.x] + value_1;
-    data[value_2_idx] = shared_data[local_id.x + WORKGROUP_SIZE] + value_2;
-
-
-    // This only does the prefix sum of the values within the WORKGROUP BLOCK.
-    // The results have to be combined in another shader.
+    data[global_id.x] = final_value;
 }
 
-fn upsweep_phase(local_id: u32){
-    // Up-sweep phase (reduction)
-    // Computes partial sums.
-    // The last element in shared_data will hold the total sum of the block.
-    var stride:u32 = 1u;
-    for (var depth: u32 = 0; depth < log2_u32(BLOCK_ELEMENTS); depth++){
-        stride = 1u << depth;  // stride = 2^depth
 
-        let write_index: u32 = (local_id + 1u) * (stride * 2u) - 1u;
-        let read_index: u32 = write_index - stride;
-
-        if write_index < BLOCK_ELEMENTS {
-            shared_data[write_index] += shared_data[read_index];
-        }
-        workgroupBarrier();
-    }
-}
-
-fn downsweep_phase(local_id: u32){
-    // Down sweep phase
-    // The same loop but reversed
-    for (var depth: i32 = i32(log2_u32(BLOCK_ELEMENTS)) - 1; depth >= 0; depth--){
-        let stride:u32 = 1u << u32(depth); // stride = 2^depth
-
-        let write_index: u32 = (local_id + 1u) * (stride * 2u) - 1u;
-        let read_index: u32 = write_index - stride;
-
-        if write_index < BLOCK_ELEMENTS {
-            let tmp = shared_data[read_index];
-            shared_data[read_index] = shared_data[write_index];
-            shared_data[write_index] += tmp;
-        }
-
-        workgroupBarrier();
-    }
-}
 
 fn get_value(idx: u32) -> u32 {
-    if (idx < num_elems){
-        return data[idx];
-    }
-    return 0;
+     return data[idx];
 }
 
 fn get_block_value(idx: u32) -> u32 {
-    if (idx < u32(ceil(f32(num_elems)/f32(BLOCK_ELEMENTS))) ){
-        return block_sums[idx];
-    }
-    return 0;
+    return block_sums[idx];
 }
 
-fn log2_u32(n: u32) -> u32 {
-    if (n == 0u) {
-        // Handle 0 case (log2(0) is undefined, typically -infinity)
-        return 0u;
-    }
-    var count = 0u;
-    var val = n;
-    if (val >= 1u << 16u) { val >>= 16u; count += 16u; }
-    if (val >= 1u << 8u)  { val >>= 8u;  count += 8u;  }
-    if (val >= 1u << 4u)  { val >>= 4u;  count += 4u;  }
-    if (val >= 1u << 2u)  { val >>= 2u;  count += 2u;  }
-    if (val >= 1u << 1u)  {              count += 1u;  } // If val is 2 or 3
-    return count;
-}
 
 /// Second pass
 @compute @workgroup_size(WORKGROUP_SIZE)
@@ -130,33 +79,45 @@ fn prefix_sum_of_the_block_sums(
     @builtin(global_invocation_id) global_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
+    @builtin(subgroup_invocation_id) subgroup_thread_id: u32,
+    @builtin(subgroup_size) subgroup_size: u32,
     ){
-    // Each thread works with 2 elements
-    // Get the elements indexes and values.
-    let value_1_idx = workgroup_id.x * BLOCK_ELEMENTS + local_id.x;
-    let value_2_idx = value_1_idx + WORKGROUP_SIZE;
-    let value_1 = get_block_value(workgroup_id.x * BLOCK_ELEMENTS + local_id.x);
-    let value_2 = get_block_value(value_2_idx);
 
-    // Load the elements into shared memory
-    shared_data[local_id.x] = value_1;
-    shared_data[local_id.x + WORKGROUP_SIZE] = value_2;
+    let subgroup_id = local_id.x / subgroup_size;
+    let num_subgroups = WORKGROUP_SIZE / subgroup_size;
+
+    // Load value
+    let block_sum = get_block_value(global_id.x);
+
+
+    // Subgroup prefix sum
+    let thread_val = subgroupInclusiveAdd(block_sum);
+
+    // The last thread of the subgroup has the total sum of the subgroup prefix sum
+    if subgroup_thread_id == subgroup_size - 1u {
+        // Store the subgroup total sum in shared memory
+        shared_data[subgroup_id] = thread_val;
+    }
     workgroupBarrier();
 
-    upsweep_phase(local_id.x);
-
-    // Only the last thread of the workgroup
-    if local_id.x == WORKGROUP_SIZE - 1 {
-        // Reset for the down sweep phase
-        shared_data[BLOCK_ELEMENTS - 1] = 0;
+    // The first subgroup does an exclusive prefix sum of the total sums of the subgroups
+    if subgroup_id == 0 {
+        let block_val = select(0, shared_data[subgroup_thread_id], subgroup_thread_id < num_subgroups);
+        let prefix_val = subgroupExclusiveAdd(block_val);
+        if subgroup_thread_id < num_subgroups {
+            shared_data[subgroup_thread_id] = prefix_val;
+        }
     }
+    workgroupBarrier();
 
-    downsweep_phase(local_id.x);
+    // Calculate the final value with the subgroup val and the block val
+    let final_value = thread_val + shared_data[subgroup_id];
+
 
 
     // Write back to global memory
-    block_sums[value_1_idx] = shared_data[local_id.x] + value_1;
-    block_sums[value_2_idx] = shared_data[local_id.x + WORKGROUP_SIZE] + value_2;
+    block_sums[global_id.x] = final_value;
+
 }
 
 var<workgroup> previous_block_sum: u32;
@@ -170,7 +131,7 @@ fn add_block_prefix_sums_to_the_buffer(
 ){
     if global_id.x >= num_elems {return;} // Out of bounds
 
-    let block_id = global_id.x / BLOCK_ELEMENTS;
+    let block_id = global_id.x / WORKGROUP_SIZE;
 
     // No need to compute the first block, as it does not have a preceding block
     if block_id == 0 {return;}

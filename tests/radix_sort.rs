@@ -2,7 +2,7 @@ use std::num::NonZeroU32;
 use wgpu::wgt::PollType::WaitForSubmissionIndex;
 use game_engine::utils::gpu_buffer::GpuBuffer;
 use game_engine::utils::radix_sort::radix_sort::GPUSorter;
-use game_engine::utils::guess_workgroup_size;
+use game_engine::utils::get_subgroup_size;
 mod common;
 #[test]
 fn sort_test() {
@@ -21,7 +21,7 @@ fn sort_test() {
     let mut scrambled_payload_buffer = GpuBuffer::new(wgpu_context, scrambled_data.clone(), wgpu::BufferUsages::STORAGE);
 
 
-    let sorter: GPUSorter = GPUSorter::new(device, guess_workgroup_size(wgpu_context).unwrap(), NonZeroU32::new(n).unwrap(), &scrambled_keys_buffer, &scrambled_payload_buffer);
+    let sorter: GPUSorter = GPUSorter::new(device, get_subgroup_size(wgpu_context).unwrap(), NonZeroU32::new(n).unwrap(), &scrambled_keys_buffer, &scrambled_payload_buffer);
     
     
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
