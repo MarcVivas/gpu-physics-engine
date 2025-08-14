@@ -42,7 +42,7 @@ impl WgpuContext {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor{
                 label: None,
-                required_features: wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS | wgpu::Features::SUBGROUP | wgpu::Features::SUBGROUP_BARRIER,
+                required_features: wgpu::Features::PUSH_CONSTANTS | wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS | wgpu::Features::SUBGROUP | wgpu::Features::SUBGROUP_BARRIER,
                 required_limits: WgpuContext::get_limits(&adapter),
                 memory_hints: Default::default(),
                 trace: wgpu::Trace::Off,
@@ -85,7 +85,7 @@ impl WgpuContext {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("Test Device"),
-                    required_features: wgpu::Features::SUBGROUP | wgpu::Features::SUBGROUP_BARRIER, 
+                    required_features: wgpu::Features::PUSH_CONSTANTS | wgpu::Features::SUBGROUP | wgpu::Features::SUBGROUP_BARRIER,
                     required_limits: WgpuContext::get_limits(&adapter),
                     ..Default::default()
                 },

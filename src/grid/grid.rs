@@ -177,6 +177,7 @@ impl Grid {
             bind_group_layout.clone(),
             WORKGROUP_SIZE,
             &vec![],
+            &vec![]
         );
 
         let count_objects_shader = ComputeShader::new(
@@ -187,6 +188,7 @@ impl Grid {
             bind_group_layout.clone(),
             WORKGROUP_SIZE,
             &vec![],
+            &vec![]
         );
         
         let build_collision_cells_shader = ComputeShader::new(
@@ -197,6 +199,7 @@ impl Grid {
             bind_group_layout.clone(),
             WORKGROUP_SIZE,
             &vec![],
+            &vec![]
         );
         
 
@@ -208,6 +211,7 @@ impl Grid {
             bind_group_layout,
             WORKGROUP_SIZE,
             &vec![],
+            &vec![]
         );
         let prefix_sum = PrefixSum::new(wgpu_context, &chunk_counting_buffer);
         let sorter: GPUSorter = GPUSorter::new(wgpu_context.get_device(), utils::get_subgroup_size(wgpu_context).unwrap(), NonZeroU32::new(buffer_len as u32).unwrap(), &cell_ids, &object_ids);
@@ -445,9 +449,10 @@ impl Grid {
     /// Key: cell id; Value: Object id
     /// Each particles would have a max of 4 cell ids (in 2D space)
     pub fn build_cell_ids(&self, encoder: &mut wgpu::CommandEncoder, total_particles: u32){
-        self.grid_kernels.build_cell_ids_shader.dispatch_by_items(
+        self.grid_kernels.build_cell_ids_shader.dispatch_by_items::<u32>(
             encoder,
             (total_particles, 1, 1),
+            None
         );
     }
 
@@ -463,16 +468,17 @@ impl Grid {
     pub fn build_collision_cells(&self, wgpu_context: &WgpuContext,  encoder: &mut wgpu::CommandEncoder){
         // Step 3.1 Count the number of objects in each chunk that share the same cell id
         let num_chunks = Grid::get_num_counting_chunks(&self.collision_cells);
-        self.grid_kernels.count_objects_per_chunk_shader.dispatch_by_items(
+        self.grid_kernels.count_objects_per_chunk_shader.dispatch_by_items::<u32>(
             encoder,
             (num_chunks, 1, 1),
+            None
         );
         
         // Step 3.2 Prefix sums the number of objects in each chunk
         self.grid_kernels.prefix_sum.execute(wgpu_context, encoder, self.chunk_counting_buffer.len() as u32);
 
         // Step 3.3 Build the collision cell list
-        self.grid_kernels.build_collision_cells_shader.dispatch_by_items(encoder, (num_chunks, 1, 1));
+        self.grid_kernels.build_collision_cells_shader.dispatch_by_items::<u32>(encoder, (num_chunks, 1, 1), None);
     }
     
     
@@ -500,10 +506,11 @@ impl Grid {
                 };
                 self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
 
-                self.grid_kernels.collision_solver_shader.indirect_dispatch(
+                self.grid_kernels.collision_solver_shader.indirect_dispatch::<u32>(
                     encoder,
                     self.indirect_dispatch_buffer.buffer(),
-                    0
+                    0,
+                    None
                 );
             });
 
@@ -533,10 +540,11 @@ impl Grid {
             };
             self.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
 
-            self.grid_kernels.collision_solver_shader.indirect_dispatch(
+            self.grid_kernels.collision_solver_shader.indirect_dispatch::<u32>(
                 &mut encoder,
                 self.indirect_dispatch_buffer.buffer(),
-                0
+                0,
+                None
             );
             wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
         }

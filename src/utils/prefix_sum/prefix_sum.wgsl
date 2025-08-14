@@ -5,8 +5,9 @@ override SHARED_MEMORY_SIZE: u32 = 64;
 var<workgroup> shared_data: array<u32, SHARED_MEMORY_SIZE>;
 
 @group(0) @binding(0) var<storage, read_write> data: array<u32>;
-@group(0) @binding(1) var<uniform> num_elems: u32;
-@group(0) @binding(2) var<storage, read_write> block_sums: array<u32>;
+@group(0) @binding(1) var<storage, read_write> block_sums: array<u32>;
+
+var<push_constant> total_elems: u32;
 
 /// First pass
 @compute @workgroup_size(WORKGROUP_SIZE)
@@ -18,7 +19,7 @@ fn prefix_sum_of_each_block(
     @builtin(subgroup_size) subgroup_size: u32,
     ){
 
-    if global_id.x >= num_elems {return;}
+    if global_id.x >= total_elems {return;}
 
     let subgroup_id = local_id.x / subgroup_size;
     let num_subgroups = WORKGROUP_SIZE / subgroup_size;
@@ -129,7 +130,7 @@ fn add_block_prefix_sums_to_the_buffer(
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ){
-    if global_id.x >= num_elems {return;} // Out of bounds
+    if global_id.x >= total_elems {return;} // Out of bounds
 
     let block_id = global_id.x / WORKGROUP_SIZE;
 

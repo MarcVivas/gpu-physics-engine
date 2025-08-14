@@ -1,6 +1,6 @@
 // in renderer/compute_shader.rs
 
-use wgpu::BindGroup;
+use wgpu::{BindGroup, PushConstantRange};
 use crate::renderer::wgpu_context::WgpuContext;
 
 pub struct ComputeShader {
@@ -20,6 +20,7 @@ impl ComputeShader {
         bind_group_layout: wgpu::BindGroupLayout,
         workgroup_size: (u32, u32, u32),
         constants: &Vec<(&str, f64)>,
+        push_constants: &Vec<PushConstantRange>,
     ) -> Self {
         let device = wgpu_context.get_device();
         let compute_shader = device.create_shader_module(shader_file);
@@ -28,7 +29,7 @@ impl ComputeShader {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some(&format!("Compute Pipeline Layout for {}", entry_point)),
             bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            push_constant_ranges: push_constants.as_slice(),
         });
 
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -59,10 +60,11 @@ impl ComputeShader {
     /// - `label`: A debug label for the compute pass.
     /// - `bind_group_entries`: The actual resources (buffers, etc.) to bind for this dispatch.
     /// - `dispatch_size`: The number of workgroups to launch in (x, y, z).
-    pub fn dispatch(
+    pub fn dispatch<T: bytemuck::Pod>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         dispatch_size: (u32, u32, u32),
+        push_constants_data: Option<(u32, &T)>,
     ) {
 
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -70,17 +72,27 @@ impl ComputeShader {
             timestamp_writes: None,
         });
 
+
         cpass.set_pipeline(&self.pipeline);
+
+        if let Some((offset, data)) = push_constants_data {
+            cpass.set_push_constants(
+                offset,
+                bytemuck::bytes_of(data),
+            );
+        }
+
         cpass.set_bind_group(0, &self.bind_group, &[]);
         cpass.dispatch_workgroups(dispatch_size.0, dispatch_size.1, dispatch_size.2);
     }
 
 
     /// A helper function to dispatch based on the total number of items to process.
-    pub fn dispatch_by_items(
+    pub fn dispatch_by_items<T: bytemuck::Pod>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         item_count: (u32, u32, u32),
+        push_constants_data: Option<(u32, &T)>,
     ) {
         let dispatch_x = (item_count.0 + self.workgroup_size.0 - 1) / self.workgroup_size.0;
         let dispatch_y = (item_count.1 + self.workgroup_size.1 - 1) / self.workgroup_size.1;
@@ -89,17 +101,27 @@ impl ComputeShader {
         // Pass the context through to the main dispatch method
         self.dispatch(
             encoder,
-            (dispatch_x, dispatch_y, dispatch_z)
+            (dispatch_x, dispatch_y, dispatch_z),
+            push_constants_data,
         );
     }
     
-    pub fn indirect_dispatch(
+    pub fn indirect_dispatch<T: bytemuck::Pod>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         indirect_buffer: &wgpu::Buffer,
         indirect_offset: u64,
+        push_constants_data: Option<(u32, &T)>,
     ) {
         let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("Solve Pass"), timestamp_writes: None });
+
+        if let Some((offset, data)) = push_constants_data {
+            compute_pass.set_push_constants(
+                offset,
+                bytemuck::bytes_of(data),
+            );
+        }
+
         compute_pass.set_pipeline(&self.pipeline);
         compute_pass.set_bind_group(0, &self.bind_group, &[]);
         compute_pass.dispatch_workgroups_indirect(indirect_buffer, indirect_offset);

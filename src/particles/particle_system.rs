@@ -320,6 +320,7 @@ impl ParticleSystem {
             bind_group_layout,
             WORKGROUP_SIZE,
             &vec![],
+            &vec![]
         )
     }
     pub fn len(&self) -> usize {
@@ -492,9 +493,10 @@ impl Renderable for ParticleSystem {
 
         gpu_timer.begin_frame();
         gpu_timer.scope("Integration pass", &mut encoder, |encoder| {
-            self.integration_pass.dispatch_by_items(
+            self.integration_pass.dispatch_by_items::<u32>(
                 encoder,
                 (self.current_positions.data().len() as u32, 1, 1),
+                None
             );
         });
         
@@ -529,9 +531,10 @@ impl Renderable for ParticleSystem {
             &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
         );
         
-        self.integration_pass.dispatch_by_items(
+        self.integration_pass.dispatch_by_items::<u32>(
             &mut encoder,
             (self.current_positions.data().len() as u32, 1, 1),
+            None
         );
         
         // Submit the commands to the GPU

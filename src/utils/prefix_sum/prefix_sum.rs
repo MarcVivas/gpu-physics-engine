@@ -1,4 +1,4 @@
-use wgpu::CommandEncoder;
+use wgpu::{CommandEncoder, PushConstantRange};
 use crate::renderer::wgpu_context::WgpuContext;
 use crate::utils::compute_shader::ComputeShader;
 use crate::utils::get_subgroup_size;
@@ -11,7 +11,6 @@ pub struct PrefixSum {
     second_pass: ComputeShader,
     third_pass: ComputeShader,
     intermediate_buffer: GpuBuffer<u32>,
-    uniform_data: GpuBuffer<u32>,
     block_prefix_sum: Option<Box<PrefixSum>>,
 }
 
@@ -25,12 +24,6 @@ impl PrefixSum {
             wgpu::BufferUsages::STORAGE,
         );
 
-        let uniform_data = GpuBuffer::new(
-            wgpu_context,
-            vec![buffer.len() as u32],
-            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        );
-        
 
         let binding_group_layout_desc = wgpu::BindGroupLayoutDescriptor {
             label: Some("Grid compute Bind Group Layout"),
@@ -46,20 +39,9 @@ impl PrefixSum {
                     },
                     count: None,
                 },
-                // Uniform data
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
                 // Intermediate data
                 wgpu::BindGroupLayoutEntry {
-                    binding: 2,
+                    binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
@@ -84,10 +66,6 @@ impl PrefixSum {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: uniform_data.buffer().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
                         resource: intermediate_buffer.buffer().as_entire_binding(),
                     },
                 ],
@@ -102,6 +80,13 @@ impl PrefixSum {
             ("SHARED_MEMORY_SIZE", ((WORKGROUP_SIZE.0/max_subgroup_size)*2) as f64),
         ];
 
+        let push_constants = vec![
+            PushConstantRange{
+                stages: wgpu::ShaderStages::COMPUTE,
+                range: 0..4,
+            }
+        ];
+
         let first_pass = ComputeShader::new(
             wgpu_context,
             wgpu::include_wgsl!("prefix_sum.wgsl"),
@@ -110,7 +95,10 @@ impl PrefixSum {
             binding_group_layout.clone(),
             WORKGROUP_SIZE,
             &constants,
+            &push_constants
         );
+
+
 
         let second_pass = ComputeShader::new(
             wgpu_context,
@@ -120,6 +108,7 @@ impl PrefixSum {
             binding_group_layout.clone(),
             WORKGROUP_SIZE,
             &constants,
+            &vec![]
         );
 
         let third_pass = ComputeShader::new(
@@ -130,6 +119,7 @@ impl PrefixSum {
             binding_group_layout.clone(),
             WORKGROUP_SIZE,
             &constants,
+            &push_constants
         );
 
         
@@ -143,7 +133,6 @@ impl PrefixSum {
             second_pass,
             third_pass,
             intermediate_buffer,
-            uniform_data,
             block_prefix_sum,
         }
     }
@@ -153,20 +142,18 @@ impl PrefixSum {
         let num_blocks = (num_items as f32 / WORKGROUP_SIZE.0 as f32).ceil() as u32;
 
         // Pass 1: Dispatch one workgroup per data block.
-        self.first_pass.dispatch_by_items(encoder, (num_items, 1, 1));
+        self.first_pass.dispatch_by_items(encoder, (num_items, 1, 1), Some((0, &num_items)));
 
         if num_items >= LIMIT {
             self.block_prefix_sum.as_ref().unwrap().execute(wgpu_context, encoder, num_blocks);
         }
         else {
             // Pass 2: Dispatch a single workgroup to scan the block_sums.
-            self.second_pass.dispatch(encoder, (1, 1, 1));
+            self.second_pass.dispatch::<u32>(encoder, (1, 1, 1), None);
         }
-        
-
 
         // Pass 3: Dispatch one thread for each number of items to add the block_sums to the buffer.
-        self.third_pass.dispatch_by_items(encoder, (num_items, 1, 1));
+        self.third_pass.dispatch_by_items(encoder, (num_items, 1, 1), Some((0, &num_items)));
         
     }
     
@@ -184,8 +171,6 @@ impl PrefixSum {
         let binding_group_layout = self.first_pass.get_bind_group_layout();
         
         let new_len: u32 = buffer.len() as u32;
-        
-        self.uniform_data.replace_elem(new_len, 0, wgpu_context);
 
         let num_blocks_to_add = PrefixSum::get_max_possible_block_sums(buffer)-self.intermediate_buffer.len();
         self.intermediate_buffer.push_all(&vec![0u32; num_blocks_to_add], wgpu_context);
@@ -208,10 +193,6 @@ impl PrefixSum {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: self.uniform_data.buffer().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
                         resource: self.intermediate_buffer.buffer().as_entire_binding(),
                     },
                 ],
