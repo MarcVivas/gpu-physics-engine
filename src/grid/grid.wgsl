@@ -363,20 +363,26 @@ fn resolve_cell_collisons(cell_hash: u32, start: u32) {
 
 }
 
-fn get_number_of_collision_cells() -> u32 {
-    // Read the total count from the last element of the prefix sum buffer
-    return chunk_obj_count[uniform_data.num_counting_chunks - 1u];
+var<workgroup> num_collision_cells: u32;
 
+
+fn load_number_of_collision_cells(local_id: u32) {
+    if local_id == 0 {
+        num_collision_cells = chunk_obj_count[uniform_data.num_counting_chunks - 1u];
+    }
+    workgroupBarrier();
 }
+
 
 // Use the collision cells to solve the collisions between objects.
 @compute @workgroup_size(WORKGROUP_SIZE)
-fn solve_collisions(@builtin(global_invocation_id) global_id: vec3<u32>){
+fn solve_collisions(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(local_invocation_id) local_id: vec3<u32>){
 
     let tid: u32 = global_id.x;
 
+    load_number_of_collision_cells(local_id.x);
 
-    if tid >= get_number_of_collision_cells() {
+    if tid >= num_collision_cells {
         // tid is out of bounds
         return;
     }
