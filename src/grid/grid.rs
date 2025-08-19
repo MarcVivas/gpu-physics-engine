@@ -81,7 +81,7 @@ impl Grid {
         
         let cell_ids = GpuBuffer::new(
             wgpu_context,
-            vec![UNUSED_CELL_ID; GPUSorter::get_required_keys_buffer_size(buffer_len as u32) as usize],
+            vec![UNUSED_CELL_ID; buffer_len],
             wgpu::BufferUsages::STORAGE);
         
         let object_ids = GpuBuffer::new(
@@ -214,7 +214,7 @@ impl Grid {
             &vec![]
         );
         let prefix_sum = PrefixSum::new(wgpu_context, &chunk_counting_buffer);
-        let sorter: GPUSorter = GPUSorter::new(wgpu_context.get_device(), utils::get_subgroup_size(wgpu_context).unwrap(), NonZeroU32::new(buffer_len as u32).unwrap(), &cell_ids, &object_ids);
+        let sorter: GPUSorter = GPUSorter::new(wgpu_context, NonZeroU32::new(buffer_len as u32).unwrap(), &cell_ids, &object_ids);
 
         Grid {
             dim,
@@ -427,7 +427,7 @@ impl Grid {
         Self::generate_grid_lines(&mut self.lines, wgpu_context, world_dimensions, cell_size);
 
         let buffer_size = particles_added * 4;
-        self.cell_ids.push_all(&vec![UNUSED_CELL_ID; GPUSorter::get_required_keys_buffer_size(buffer_size as u32) as usize], wgpu_context);
+        self.cell_ids.push_all(&vec![UNUSED_CELL_ID; buffer_size], wgpu_context);
         self.object_ids.push_all(&vec![0; buffer_size], wgpu_context);
         self.chunk_counting_buffer.push_all(&vec![0; ((buffer_size as u32 + COUNTING_CHUNK_SIZE - 1) / COUNTING_CHUNK_SIZE) as usize], wgpu_context);
         self.collision_cells.push_all(&vec![UNUSED_CELL_ID; buffer_size], wgpu_context);
@@ -441,7 +441,7 @@ impl Grid {
         self.grid_kernels.count_objects_per_chunk_shader.update_binding_group(binding_group.clone());
         self.grid_kernels.build_collision_cells_shader.update_binding_group(binding_group.clone());
         self.grid_kernels.collision_solver_shader.update_binding_group(binding_group);
-        self.grid_kernels.gpu_sorter.update_sorting_buffers(wgpu_context.get_device(), NonZeroU32::new(self.object_ids.len() as u32).unwrap(), &self.cell_ids, &self.object_ids);
+        self.grid_kernels.gpu_sorter.update_sorting_buffers(wgpu_context, NonZeroU32::new(self.object_ids.len() as u32).unwrap(), &self.cell_ids, &self.object_ids);
         self.grid_kernels.prefix_sum.update_buffers(wgpu_context, &self.chunk_counting_buffer);
     }
 
@@ -458,8 +458,8 @@ impl Grid {
 
     /// Step 2: Sorts the map of cell ids to objects by cell id.
     /// Key: cell id; Value: Object id
-    pub fn sort_map(&self, encoder: &mut wgpu::CommandEncoder, wgpu_context: &WgpuContext){
-        self.grid_kernels.gpu_sorter.sort(encoder, wgpu_context.get_queue(), None);
+    pub fn sort_map(&mut self, encoder: &mut wgpu::CommandEncoder, wgpu_context: &WgpuContext){
+        self.grid_kernels.gpu_sorter.sort(encoder, wgpu_context, None);
     }
     
     /// Step 3: Builds the collision cell list.
