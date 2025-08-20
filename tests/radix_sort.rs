@@ -100,8 +100,6 @@ fn sort_test_small_sized_array() {
     }
     assert_eq!(*histogram, expected_histogram);
     
-    println!("{:?}", histogram);
-
 
     encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("GPURSSorter test_sort"),

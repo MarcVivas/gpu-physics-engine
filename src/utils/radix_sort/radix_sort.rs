@@ -38,7 +38,7 @@ pub const BITS_PER_ELEMENT: u32 = 32;
 pub const RADIX_SORT_TOTAL_ITERATIONS: u32 = BITS_PER_ELEMENT / RADIX_SORT_BITS_PER_PASS;
 
 // Each workgroup processes NUM_BLOCKS_PER_WORKGROUP blocks/histograms
-pub const NUM_BLOCKS_PER_WORKGROUP: u32 = 32;
+pub const NUM_BLOCKS_PER_WORKGROUP: u32 = 45;
 
 
 

@@ -62,9 +62,6 @@ fn build_histogram(
 override NUM_SUBGROUPS: u32 = WORKGROUP_SIZE / SUBGROUP_SIZE;
 
 
-// Used for subgroup reductions
-var<workgroup> shared_sums: array<u32, NUM_SUBGROUPS>;
-
 // Exclusive prefix sum. Where each bucket starts in the final output
 var<workgroup> shared_global_offsets: array<atomic<u32>, RADIX_SORT_BUCKETS>;
 
