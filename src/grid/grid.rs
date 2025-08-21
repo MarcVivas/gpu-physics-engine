@@ -20,6 +20,8 @@ const COUNTING_CHUNK_SIZE: u32 = 4;
 /// The value must match in the compute shader.
 const WORKGROUP_SIZE: (u32, u32, u32) = (64, 1, 1);
 
+const MAX_CELLS_PER_OBJECT: u32 = 4;
+
 const CELL_SIZE_MULTIPLIER: f32 = 2.2f32;
 
 pub struct Grid {
@@ -176,7 +178,10 @@ impl Grid {
             bind_group.clone(),
             bind_group_layout.clone(),
             WORKGROUP_SIZE,
-            &vec![],
+            &vec![
+                ("WORKGROUP_SIZE", WORKGROUP_SIZE.0 as f64),
+                ("MAX_CELLS_PER_OBJECT", MAX_CELLS_PER_OBJECT as f64)
+            ],
             &vec![]
         );
 
@@ -187,7 +192,11 @@ impl Grid {
             bind_group.clone(),
             bind_group_layout.clone(),
             WORKGROUP_SIZE,
-            &vec![],
+            &vec![
+                ("WORKGROUP_SIZE", WORKGROUP_SIZE.0 as f64),
+                ("MAX_CELLS_PER_OBJECT", MAX_CELLS_PER_OBJECT as f64),
+                ("CHUNK_SIZE", COUNTING_CHUNK_SIZE as f64)
+            ],
             &vec![]
         );
         
@@ -198,7 +207,11 @@ impl Grid {
             bind_group.clone(),
             bind_group_layout.clone(),
             WORKGROUP_SIZE,
-            &vec![],
+            &vec![
+                ("WORKGROUP_SIZE", WORKGROUP_SIZE.0 as f64),
+                ("MAX_CELLS_PER_OBJECT", MAX_CELLS_PER_OBJECT as f64),
+                ("CHUNK_SIZE", COUNTING_CHUNK_SIZE as f64)
+            ],
             &vec![]
         );
         
@@ -210,7 +223,11 @@ impl Grid {
             bind_group,
             bind_group_layout,
             WORKGROUP_SIZE,
-            &vec![],
+            &vec![
+                ("WORKGROUP_SIZE", WORKGROUP_SIZE.0 as f64),
+                ("MAX_CELLS_PER_OBJECT", MAX_CELLS_PER_OBJECT as f64),
+                ("CHUNK_SIZE", COUNTING_CHUNK_SIZE as f64)
+            ],
             &vec![]
         );
         let prefix_sum = PrefixSum::new(wgpu_context, &chunk_counting_buffer);

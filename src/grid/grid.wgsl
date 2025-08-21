@@ -1,10 +1,9 @@
 
-const WORKGROUP_SIZE = 64u;
+override WORKGROUP_SIZE = 64u;
 // For 2D, an object can touch at most 2^2 = 4 cells.
-const MAX_CELLS_PER_OBJECT = 4u;
+override MAX_CELLS_PER_OBJECT = 4u;
 
 const UNUSED_CELL_ID = 0xffffffffu;
-
 const X_MASK = 0x0000FFFFu;
 
 struct UniformData {
@@ -119,7 +118,7 @@ fn is_obj_in_cell(particle_pos: vec2<f32>, particle_sq_radius: f32, cell_coord: 
     return dist_sq < particle_sq_radius;
 }
 
-const CHUNK_SIZE: u32 = 4;
+override CHUNK_SIZE: u32 = 4;
 
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn count_objects_for_each_chunk(@builtin(global_invocation_id) global_id: vec3<u32>){
