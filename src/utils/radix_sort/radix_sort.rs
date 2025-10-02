@@ -14,6 +14,7 @@ use std::{
 use bytemuck::bytes_of;
 use wgpu::{include_wgsl, util::DeviceExt, BufferAsyncError, PushConstantRange};
 use crate::renderer::wgpu_context::WgpuContext;
+use crate::utils::bind_resources::BindResources;
 use crate::utils::compute_shader::ComputeShader;
 use crate::utils::get_subgroup_size;
 use crate::utils::gpu_buffer::GpuBuffer;
@@ -46,6 +47,7 @@ pub struct GPUSorter {
     histogram_shader: ComputeShader,
     scatter_shader: ComputeShader,
     sorting_buffers: SortBuffers,
+    bind_resources: BindResources
 }
 
 
@@ -61,11 +63,14 @@ pub struct PushConstants {
 impl GPUSorter {
     pub fn new(wgpu_context: &WgpuContext, length: NonZeroU32, keys: &GpuBuffer<u32>, payload: &GpuBuffer<u32>) -> Self {
         
-        let bind_group_layout = Self::bind_group_layout(wgpu_context.get_device());
+        let bind_group_layout = Self::create_bind_group_layout(wgpu_context.get_device());
 
         let sorting_buffers = Self::create_sort_buffers(wgpu_context, length, keys, payload);
         
         let bind_group = sorting_buffers.bind_group_ping.clone();
+        
+        let bind_resources = BindResources::new(bind_group_layout, bind_group);
+        
         
         assert!(WORKGROUP_SIZE.0 <= RADIX_SORT_BUCKETS);
         
@@ -87,8 +92,7 @@ impl GPUSorter {
             wgpu_context,
             include_wgsl!("radix_sort.wgsl"),
             "build_histogram",
-            bind_group.clone(),
-            bind_group_layout.clone(),
+            &bind_resources.bind_group_layout,
             WORKGROUP_SIZE,
             &constants,
             &push_constants,
@@ -99,8 +103,7 @@ impl GPUSorter {
             wgpu_context,
             include_wgsl!("radix_sort.wgsl"),
             "scatter_keys",
-            bind_group,
-            bind_group_layout,
+            &bind_resources.bind_group_layout,
             WORKGROUP_SIZE,
             &constants,
             &push_constants
@@ -110,11 +113,12 @@ impl GPUSorter {
         Self {
             histogram_shader,
             scatter_shader,
-            sorting_buffers
+            sorting_buffers,
+            bind_resources,
         }
     }
 
-    fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         return device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("radix sort bind group layout"),
             entries: &[
@@ -178,30 +182,22 @@ impl GPUSorter {
     }
     
     pub fn build_histogram(&mut self, encoder: &mut wgpu::CommandEncoder, total_threads: (u32, u32, u32), push_constants: &PushConstants, ping_pong: &bool){
-        if *ping_pong {
-            self.histogram_shader.update_binding_group(self.sorting_buffers.bind_group_ping.clone());
-        }
-        else {
-            self.histogram_shader.update_binding_group(self.sorting_buffers.bind_group_pong.clone());       
-        }
+        let ping_pong_bind_group = if *ping_pong {&self.sorting_buffers.bind_group_ping} else {&self.sorting_buffers.bind_group_pong};
         self.histogram_shader.dispatch_by_items(
             encoder,
             total_threads,
-            Some((0, push_constants))
+            Some((0, push_constants)),
+            ping_pong_bind_group
         );
     }
 
     pub fn scatter(&mut self, encoder: &mut wgpu::CommandEncoder, total_threads: (u32, u32, u32), push_constants: &PushConstants, ping_pong: &bool){
-        if *ping_pong {
-            self.scatter_shader.update_binding_group(self.sorting_buffers.bind_group_ping.clone());
-        }
-        else {
-            self.scatter_shader.update_binding_group(self.sorting_buffers.bind_group_pong.clone());
-        }
+        let ping_pong_bind_group = if *ping_pong {&self.sorting_buffers.bind_group_ping} else {&self.sorting_buffers.bind_group_pong};
         self.scatter_shader.dispatch_by_items(
             encoder,
             total_threads,
-            Some((0, push_constants))
+            Some((0, push_constants)),
+            ping_pong_bind_group       
         );
     }
     pub fn sort(&mut self, encoder: &mut wgpu::CommandEncoder, wgpu_context: &WgpuContext, sort_first_n:Option<u32>) {
@@ -248,8 +244,6 @@ impl GPUSorter {
                                   keys_a: &GpuBuffer<u32>,
                                   payload_a: &GpuBuffer<u32>){
         self.sorting_buffers = Self::create_sort_buffers(wgpu_context, length, keys_a, payload_a);
-        self.histogram_shader.update_binding_group(self.sorting_buffers.bind_group_ping.clone());
-        self.scatter_shader.update_binding_group(self.sorting_buffers.bind_group_ping.clone());
     }
     
     /// Creates all buffers necessary for sorting, using user-provided buffers for keys and values.
@@ -290,7 +284,7 @@ impl GPUSorter {
 
         let bind_group_ping = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("radix sort bind group with user buffers"),
-            layout: &Self::bind_group_layout(device), 
+            layout: &Self::create_bind_group_layout(device), 
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -321,7 +315,7 @@ impl GPUSorter {
 
         let bind_group_pong = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("radix sort bind group pong with user buffers"),
-            layout: &Self::bind_group_layout(device),
+            layout: &Self::create_bind_group_layout(device),
             entries: &[
                 // Keys b
                 wgpu::BindGroupEntry {

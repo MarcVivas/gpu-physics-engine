@@ -95,8 +95,6 @@ fn build_cell_ids_array(@builtin(global_invocation_id) global_id: vec3<u32>){
     }
 
 
-    //positions[obj_id] = vec2<f32>(f32(obj_id), f32(obj_id));
-
 }
 
 // Shift the y-coordinate into the upper 16 bits, and leave x in the lower 16 bits.

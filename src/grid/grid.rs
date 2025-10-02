@@ -11,6 +11,7 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use wgpu::{BindGroupLayout, BufferAsyncError};
 use crate::utils;
+use crate::utils::bind_resources::BindResources;
 use crate::utils::gpu_timer::GpuTimer;
 use crate::utils::radix_sort::radix_sort::GPUSorter;
 use crate::utils::prefix_sum::prefix_sum::PrefixSum;
@@ -24,6 +25,9 @@ const MAX_CELLS_PER_OBJECT: u32 = 4;
 
 const CELL_SIZE_MULTIPLIER: f32 = 2.2f32;
 
+const UNUSED_CELL_ID: u32 = u32::MAX;
+
+
 pub struct Grid {
     dim: u32,
     render_grid: bool,
@@ -36,16 +40,18 @@ pub struct Grid {
     elements: Rc<RefCell<ParticleSystem>>,
     uniform_buffer: GpuBuffer<UniformData>,
     grid_kernels: GridKernels,
+    grid_binding_group: BindResources,
 }
 
 struct GridKernels {
     build_cell_ids_shader: ComputeShader,
     count_objects_per_chunk_shader: ComputeShader,
     build_collision_cells_shader: ComputeShader,
-    collision_solver_shader: ComputeShader, 
+    collision_solver_shader: ComputeShader,
     gpu_sorter: GPUSorter,
     prefix_sum: PrefixSum,
 }
+
 
 
 #[repr(C)]
@@ -59,7 +65,6 @@ struct UniformData {
     num_counting_chunks: u32,
 }
 
-const UNUSED_CELL_ID: u32 = u32::MAX;
 
 impl Grid {
     pub fn new(wgpu_context: &WgpuContext, camera: &Camera, world_dimensions: Vec2, max_obj_radius: f32, particle_system: Rc<RefCell<ParticleSystem>>) -> Grid {
@@ -76,7 +81,7 @@ impl Grid {
     pub fn new_without_camera(wgpu_context: &WgpuContext, max_obj_radius: f32, particle_system: Rc<RefCell<ParticleSystem>>) -> Grid{
         let total_particles: usize = particle_system.borrow().len();
         let dim: u32 = 2;
-        let buffer_len = total_particles * 2usize.pow(dim); // A particles can be in 2**dim different cells
+        let buffer_len = total_particles * 2usize.pow(dim); // A particle can be in 2**dim different cells
         let cell_size = Self::gen_cell_size(max_obj_radius);
 
         
@@ -127,7 +132,7 @@ impl Grid {
         );
 
 
-        let bind_group_layout = Grid::get_binding_group_layout(wgpu_context);
+        let bind_group_layout = Grid::generate_binding_group_layout(wgpu_context);
 
         // Create bind group
         let bind_group = wgpu_context.get_device().create_bind_group(
@@ -170,13 +175,17 @@ impl Grid {
                 ],
             }
         );
+        
+        let grid_binding_group = BindResources{
+            bind_group,
+            bind_group_layout,
+        };
 
         let build_grid_shader = ComputeShader::new(
             wgpu_context,
             wgpu::include_wgsl!("grid.wgsl"),
             "build_cell_ids_array",
-            bind_group.clone(),
-            bind_group_layout.clone(),
+            &grid_binding_group.bind_group_layout,
             WORKGROUP_SIZE,
             &vec![
                 ("WORKGROUP_SIZE", WORKGROUP_SIZE.0 as f64),
@@ -189,8 +198,7 @@ impl Grid {
             wgpu_context,
             wgpu::include_wgsl!("grid.wgsl"),
             "count_objects_for_each_chunk",
-            bind_group.clone(),
-            bind_group_layout.clone(),
+            &grid_binding_group.bind_group_layout,
             WORKGROUP_SIZE,
             &vec![
                 ("WORKGROUP_SIZE", WORKGROUP_SIZE.0 as f64),
@@ -204,8 +212,7 @@ impl Grid {
             wgpu_context,
             wgpu::include_wgsl!("grid.wgsl"),
             "build_collision_cells_array",
-            bind_group.clone(),
-            bind_group_layout.clone(),
+            &grid_binding_group.bind_group_layout,
             WORKGROUP_SIZE,
             &vec![
                 ("WORKGROUP_SIZE", WORKGROUP_SIZE.0 as f64),
@@ -220,8 +227,7 @@ impl Grid {
             wgpu_context,
             wgpu::include_wgsl!("grid.wgsl"),
             "solve_collisions",
-            bind_group,
-            bind_group_layout,
+            &grid_binding_group.bind_group_layout,
             WORKGROUP_SIZE,
             &vec![
                 ("WORKGROUP_SIZE", WORKGROUP_SIZE.0 as f64),
@@ -245,6 +251,7 @@ impl Grid {
             uniform_buffer: uniform_data,
             chunk_counting_buffer,
             grid_kernels: GridKernels{build_cell_ids_shader: build_grid_shader, count_objects_per_chunk_shader: count_objects_shader, gpu_sorter: sorter, prefix_sum, build_collision_cells_shader, collision_solver_shader },
+            grid_binding_group
         }
     }
 
@@ -294,7 +301,7 @@ impl Grid {
         lines.as_mut().expect("No lines").push_all(wgpu_context, &positions, &colors, &thicknesses);
     }
     
-    fn get_binding_group_layout(wgpu_context: &WgpuContext) -> wgpu::BindGroupLayout{
+    fn generate_binding_group_layout(wgpu_context: &WgpuContext) -> wgpu::BindGroupLayout{
         let compute_bind_group_layout = wgpu::BindGroupLayoutDescriptor {
             label: Some("Grid compute Bind Group Layout"),
             entries: &[
@@ -390,7 +397,7 @@ impl Grid {
 
         wgpu_context.get_device().create_bind_group_layout(&compute_bind_group_layout)
     }
-    fn get_binding_group(&self, wgpu_context: &WgpuContext, bind_group_layout: &BindGroupLayout) -> wgpu::BindGroup{
+    fn generate_binding_group(&self, wgpu_context: &WgpuContext, bind_group_layout: &BindGroupLayout) -> wgpu::BindGroup{
         wgpu_context.get_device().create_bind_group(
             &wgpu::BindGroupDescriptor {
                 label: None,
@@ -451,25 +458,21 @@ impl Grid {
         
         
         
-        // Update the shaders with the new buffers
-        let binding_group_layout = Grid::get_binding_group_layout(wgpu_context);
-        let binding_group = self.get_binding_group(wgpu_context, &binding_group_layout);
-        self.grid_kernels.build_cell_ids_shader.update_binding_group(binding_group.clone());
-        self.grid_kernels.count_objects_per_chunk_shader.update_binding_group(binding_group.clone());
-        self.grid_kernels.build_collision_cells_shader.update_binding_group(binding_group.clone());
-        self.grid_kernels.collision_solver_shader.update_binding_group(binding_group);
+        // Update the binding group
+        self.grid_binding_group.bind_group = self.generate_binding_group(wgpu_context, &self.grid_binding_group.bind_group_layout);
         self.grid_kernels.gpu_sorter.update_sorting_buffers(wgpu_context, NonZeroU32::new(self.object_ids.len() as u32).unwrap(), &self.cell_ids, &self.object_ids);
         self.grid_kernels.prefix_sum.update_buffers(wgpu_context, &self.chunk_counting_buffer);
     }
 
     /// Step 1: Constructs the map of cell ids to objects.
     /// Key: cell id; Value: Object id
-    /// Each particles would have a max of 4 cell ids (in 2D space)
+    /// Each particle has a max of 4 cell ids (in 2D space)
     pub fn build_cell_ids(&self, encoder: &mut wgpu::CommandEncoder, total_particles: u32){
         self.grid_kernels.build_cell_ids_shader.dispatch_by_items::<u32>(
             encoder,
             (total_particles, 1, 1),
-            None
+            None,
+            &self.grid_binding_group.bind_group
         );
     }
 
@@ -488,14 +491,15 @@ impl Grid {
         self.grid_kernels.count_objects_per_chunk_shader.dispatch_by_items::<u32>(
             encoder,
             (num_chunks, 1, 1),
-            None
+            None,
+            &self.grid_binding_group.bind_group       
         );
         
         // Step 3.2 Prefix sums the number of objects in each chunk
         self.grid_kernels.prefix_sum.execute(wgpu_context, encoder, self.chunk_counting_buffer.len() as u32);
 
         // Step 3.3 Build the collision cell list
-        self.grid_kernels.build_collision_cells_shader.dispatch_by_items::<u32>(encoder, (num_chunks, 1, 1), None);
+        self.grid_kernels.build_collision_cells_shader.dispatch_by_items::<u32>(encoder, (num_chunks, 1, 1), None, &self.grid_binding_group.bind_group);
     }
     
     
@@ -527,7 +531,8 @@ impl Grid {
                     encoder,
                     self.indirect_dispatch_buffer.buffer(),
                     0,
-                    None
+                    None,
+                    &self.grid_binding_group.bind_group
                 );
             });
 
@@ -561,7 +566,8 @@ impl Grid {
                 &mut encoder,
                 self.indirect_dispatch_buffer.buffer(),
                 0,
-                None
+                None,
+                &self.grid_binding_group.bind_group
             );
             wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
         }

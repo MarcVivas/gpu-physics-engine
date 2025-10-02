@@ -1,5 +1,6 @@
-use wgpu::{CommandEncoder, PushConstantRange};
+use wgpu::{BindGroup, CommandEncoder, PushConstantRange};
 use crate::renderer::wgpu_context::WgpuContext;
+use crate::utils::bind_resources::BindResources;
 use crate::utils::compute_shader::ComputeShader;
 use crate::utils::get_subgroup_size;
 use crate::utils::gpu_buffer::GpuBuffer;
@@ -12,6 +13,7 @@ pub struct PrefixSum {
     third_pass: ComputeShader,
     intermediate_buffer: GpuBuffer<u32>,
     block_prefix_sum: Option<Box<PrefixSum>>,
+    bind_resources: BindResources,
 }
 
 impl PrefixSum {
@@ -71,6 +73,8 @@ impl PrefixSum {
                 ],
             }
         );
+        
+        let bind_resources = BindResources::new(binding_group_layout, binding_group);
 
         let max_subgroup_size = get_subgroup_size(wgpu_context).unwrap();
 
@@ -91,21 +95,18 @@ impl PrefixSum {
             wgpu_context,
             wgpu::include_wgsl!("prefix_sum.wgsl"),
             "prefix_sum_of_each_block",
-            binding_group.clone(),
-            binding_group_layout.clone(),
+            &bind_resources.bind_group_layout,
             WORKGROUP_SIZE,
             &constants,
             &push_constants
         );
-
-
+        
 
         let second_pass = ComputeShader::new(
             wgpu_context,
             wgpu::include_wgsl!("prefix_sum.wgsl"),
             "prefix_sum_of_the_block_sums",
-            binding_group.clone(),
-            binding_group_layout.clone(),
+            &bind_resources.bind_group_layout,
             WORKGROUP_SIZE,
             &constants,
             &vec![]
@@ -115,8 +116,7 @@ impl PrefixSum {
             wgpu_context,
             wgpu::include_wgsl!("prefix_sum.wgsl"),
             "add_block_prefix_sums_to_the_buffer",
-            binding_group.clone(),
-            binding_group_layout.clone(),
+            &bind_resources.bind_group_layout,
             WORKGROUP_SIZE,
             &constants,
             &push_constants
@@ -134,6 +134,7 @@ impl PrefixSum {
             third_pass,
             intermediate_buffer,
             block_prefix_sum,
+            bind_resources
         }
     }
     
@@ -142,18 +143,18 @@ impl PrefixSum {
         let num_blocks = (num_items as f32 / WORKGROUP_SIZE.0 as f32).ceil() as u32;
 
         // Pass 1: Dispatch one workgroup per data block.
-        self.first_pass.dispatch_by_items(encoder, (num_items, 1, 1), Some((0, &num_items)));
+        self.first_pass.dispatch_by_items(encoder, (num_items, 1, 1), Some((0, &num_items)), &self.bind_resources.bind_group);
 
         if num_items >= LIMIT {
             self.block_prefix_sum.as_ref().unwrap().execute(wgpu_context, encoder, num_blocks);
         }
         else {
             // Pass 2: Dispatch a single workgroup to scan the block_sums.
-            self.second_pass.dispatch::<u32>(encoder, (1, 1, 1), None);
+            self.second_pass.dispatch::<u32>(encoder, (1, 1, 1), None, &self.bind_resources.bind_group);
         }
 
         // Pass 3: Dispatch one thread for each number of items to add the block_sums to the buffer.
-        self.third_pass.dispatch_by_items(encoder, (num_items, 1, 1), Some((0, &num_items)));
+        self.third_pass.dispatch_by_items(encoder, (num_items, 1, 1), Some((0, &num_items)), &self.bind_resources.bind_group);
         
     }
     
@@ -168,7 +169,7 @@ impl PrefixSum {
 
     /// Update buffers when resizing the buffer
     pub fn update_buffers(&mut self, wgpu_context: &WgpuContext, buffer: &GpuBuffer<u32>) {
-        let binding_group_layout = self.first_pass.get_bind_group_layout();
+        let binding_group_layout = &self.bind_resources.bind_group_layout;
         
         let new_len: u32 = buffer.len() as u32;
 
@@ -182,7 +183,7 @@ impl PrefixSum {
             self.block_prefix_sum.as_mut().unwrap().update_buffers(wgpu_context, &self.intermediate_buffer);
         }
         
-        let binding_group = wgpu_context.get_device().create_bind_group(
+        self.bind_resources.bind_group = wgpu_context.get_device().create_bind_group(
             &wgpu::BindGroupDescriptor {
                 label: None,
                 layout: &binding_group_layout,
@@ -197,18 +198,6 @@ impl PrefixSum {
                     },
                 ],
             }
-        );
-        
-        self.first_pass.update_binding_group(
-            binding_group.clone()
-        );
-        
-        self.second_pass.update_binding_group(
-            binding_group.clone()
-        );
-        
-        self.third_pass.update_binding_group(
-            binding_group
         );
     }
 }

@@ -10,7 +10,6 @@ struct SimParams {
 // Bindings for the Compute Shader
 @group(0) @binding(0) var<uniform> sim_params: SimParams;
 @group(0) @binding(1) var<storage, read_write> positions: array<vec2<f32>>;
-@group(0) @binding(2) var<storage, read_write> velocities: array<vec2<f32>>;
 @group(0) @binding(3) var<storage, read_write> previous_positions: array<vec2<f32>>;
 @group(0) @binding(4) var<storage, read> radius: array<f32>;
 
@@ -48,7 +47,6 @@ fn verlet_integration(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     // Verlet integration
     let velocity = current_position - previous_position;
-    velocities[index] = velocity;
 
     var total_acceleration = FORCE_OF_GRAVITY;
 
@@ -98,27 +96,12 @@ struct VertexInput {
     @location(0) position: vec2<f32>,
 };
 
-struct InstanceInput {
-    @location(1) position: vec2<f32>,
-}
-
-struct RadiusInput {
-    @location(2) radius: f32,
-}
-
-struct ColorInput {
-    @location(3) color: vec4<f32>,
-}
-
-struct VelocityInput {
-    @location(4) velocity: vec2<f32>,
-}
 
 struct Camera {
     view_proj: mat4x4<f32>,
 };
 
-@group(0) @binding(0)
+@group(1) @binding(0)
 var<uniform> u_camera: Camera;
 
 struct VertexOutput {
@@ -128,14 +111,18 @@ struct VertexOutput {
 };
 
 @vertex
-fn vs_main(@builtin(vertex_index) vertex_id : u32,
-model: VertexInput, instance: InstanceInput, radius: RadiusInput, color: ColorInput, velocity: VelocityInput) -> VertexOutput {
+fn vs_main(@builtin(instance_index) instance_id : u32,
+model: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    out.color = get_particle_color(velocity.velocity);
+    let particle_pos = positions[instance_id];
+    let radius = radius[instance_id];
+    let vel = particle_pos - previous_positions[instance_id];
+
+    out.color = get_particle_color(vel);
     out.local_pos = model.position;
 
-    let scaled_position = model.position * radius.radius * 2.0;
-    let world_position = scaled_position + instance.position;
+    let scaled_position = model.position * radius * 2.0;
+    let world_position = scaled_position + particle_pos;
 
     out.clip_position = u_camera.view_proj * vec4<f32>(world_position, 0.0, 1.0);
     return out;
