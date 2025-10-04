@@ -144,7 +144,7 @@ impl State {
         self.mouse_position = position;
         self.renderer.set_camera_zoom_position(position);
         let world_position = self.get_renderer().camera().screen_to_world(&self.get_wgpu_context().window_size(), &Vec2::new(self.get_mouse_position().unwrap().x as f32, self.get_mouse_position().unwrap().y as f32));
-        self.particles.borrow_mut().mouse_move_callback(&self.wgpu_context, world_position);
+        self.particles.borrow_mut().mouse_move_callback(world_position);
     }
 }
 
@@ -159,7 +159,7 @@ impl State {
     pub fn mouse_click_callback(&mut self, mouse_state: &ElementState, button: &MouseButton){
         if button == &MouseButton::Left {
             let position = self.get_renderer().camera().screen_to_world(&self.get_wgpu_context().window_size(), &Vec2::new(self.get_mouse_position().unwrap().x as f32, self.get_mouse_position().unwrap().y as f32));
-            self.particles.borrow_mut().mouse_click_callback(&self.wgpu_context, mouse_state, position);
+            self.particles.borrow_mut().mouse_click_callback(mouse_state, position);
         }
         
     }

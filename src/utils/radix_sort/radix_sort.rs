@@ -80,7 +80,7 @@ impl GPUSorter {
             ("SUBGROUP_SIZE", get_subgroup_size(wgpu_context).unwrap() as f64),
         ];
 
-        
+
         let push_constants = vec![
             PushConstantRange{
                 stages: wgpu::ShaderStages::COMPUTE,
@@ -186,7 +186,7 @@ impl GPUSorter {
         self.histogram_shader.dispatch_by_items(
             encoder,
             total_threads,
-            Some((0, push_constants)),
+            Some(vec![(0, bytes_of(push_constants))]),
             ping_pong_bind_group
         );
     }
@@ -196,7 +196,7 @@ impl GPUSorter {
         self.scatter_shader.dispatch_by_items(
             encoder,
             total_threads,
-            Some((0, push_constants)),
+            Some(vec![(0, bytes_of(push_constants))]),
             ping_pong_bind_group       
         );
     }

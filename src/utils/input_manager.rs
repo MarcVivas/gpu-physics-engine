@@ -19,8 +19,7 @@ impl InputManager {
                     &state.get_renderer().camera().screen_to_world(&state.get_wgpu_context().window_size(), &Vec2::new(state.get_mouse_position().unwrap().x as f32, state.get_mouse_position().unwrap().y as f32)),
                     state.get_wgpu_context()
                 );
-                let particles_added = state.get_particles().borrow().positions().len() - prev_num_particles;
-                state.get_grid().borrow_mut().refresh_grid(state.get_wgpu_context(), state.get_renderer().camera(), state.get_world_size(), state.get_particles().borrow().get_max_radius(), particles_added);
+                state.get_grid().borrow_mut().refresh_grid(state.get_wgpu_context(), state.get_renderer().camera(), state.get_world_size(), state.get_particles(), prev_num_particles);
             },
             (KeyCode::KeyG, true) => {
                 state.get_grid().borrow_mut().render_grid();

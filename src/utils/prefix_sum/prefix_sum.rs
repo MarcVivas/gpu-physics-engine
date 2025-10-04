@@ -1,3 +1,4 @@
+use bytemuck::bytes_of;
 use wgpu::{BindGroup, CommandEncoder, PushConstantRange};
 use crate::renderer::wgpu_context::WgpuContext;
 use crate::utils::bind_resources::BindResources;
@@ -143,18 +144,18 @@ impl PrefixSum {
         let num_blocks = (num_items as f32 / WORKGROUP_SIZE.0 as f32).ceil() as u32;
 
         // Pass 1: Dispatch one workgroup per data block.
-        self.first_pass.dispatch_by_items(encoder, (num_items, 1, 1), Some((0, &num_items)), &self.bind_resources.bind_group);
+        self.first_pass.dispatch_by_items(encoder, (num_items, 1, 1), Some(vec![(0, bytes_of(&num_items))]), &self.bind_resources.bind_group);
 
         if num_items >= LIMIT {
             self.block_prefix_sum.as_ref().unwrap().execute(wgpu_context, encoder, num_blocks);
         }
         else {
             // Pass 2: Dispatch a single workgroup to scan the block_sums.
-            self.second_pass.dispatch::<u32>(encoder, (1, 1, 1), None, &self.bind_resources.bind_group);
+            self.second_pass.dispatch(encoder, (1, 1, 1), None, &self.bind_resources.bind_group);
         }
 
         // Pass 3: Dispatch one thread for each number of items to add the block_sums to the buffer.
-        self.third_pass.dispatch_by_items(encoder, (num_items, 1, 1), Some((0, &num_items)), &self.bind_resources.bind_group);
+        self.third_pass.dispatch_by_items(encoder, (num_items, 1, 1), Some(vec![(0, bytes_of(&num_items))]), &self.bind_resources.bind_group);
         
     }
     

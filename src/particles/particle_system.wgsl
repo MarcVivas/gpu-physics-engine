@@ -8,11 +8,12 @@ struct SimParams {
 };
 
 // Bindings for the Compute Shader
-@group(0) @binding(0) var<uniform> sim_params: SimParams;
-@group(0) @binding(1) var<storage, read_write> positions: array<vec2<f32>>;
-@group(0) @binding(3) var<storage, read_write> previous_positions: array<vec2<f32>>;
-@group(0) @binding(4) var<storage, read> radius: array<f32>;
+@group(0) @binding(0) var<storage, read_write> positions: array<vec2<f32>>;
+@group(0) @binding(1) var<storage, read_write> previous_positions: array<vec2<f32>>;
+@group(0) @binding(2) var<storage, read> radius: array<f32>;
 
+
+var<push_constant> push_constants: SimParams;
 
 // The Compute Shader
 // WORKGROUP_SIZE is the number of threads we run in a block. 
@@ -50,9 +51,9 @@ fn verlet_integration(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     var total_acceleration = FORCE_OF_GRAVITY;
 
-    if (sim_params.is_mouse_pressed == 1u) {
+    if (push_constants.is_mouse_pressed == 1u) {
         // Calculate a vector pointing from the particle to the mouse
-        let direction_to_mouse = sim_params.mouse_pos - current_position;
+        let direction_to_mouse = push_constants.mouse_pos - current_position;
 
         // Normalize the direction to get a unit vector, then scale by our strength constant.
         // This creates the mouse attraction acceleration.
@@ -71,13 +72,13 @@ fn verlet_integration(@builtin(global_invocation_id) global_id: vec3<u32>) {
     
     // Apply boundary constraints
     // Boundary check (bouncing)
-    predicted_position.x = clamp(predicted_position.x, particle_radius, sim_params.world_width - particle_radius);
-    predicted_position.y = clamp(predicted_position.y, particle_radius, sim_params.world_height - particle_radius);
+    predicted_position.x = clamp(predicted_position.x, particle_radius, push_constants.world_width - particle_radius);
+    predicted_position.y = clamp(predicted_position.y, particle_radius, push_constants.world_height - particle_radius);
 
     /*
     // Circle world
-    let world_center = vec2<f32>(sim_params.world_width/2.0, sim_params.world_height/2.0);
-    let world_radius = min(sim_params.world_width/2.0, sim_params.world_height/2.0);
+    let world_center = vec2<f32>(push_constants.world_width/2.0, push_constants.world_height/2.0);
+    let world_radius = min(push_constants.world_width/2.0, push_constants.world_height/2.0);
     let vec_particle_world_center = predicted_position-world_center;
     let distance_from_center = dot(vec_particle_world_center, vec_particle_world_center);
     let max_radius =  world_radius - particle_radius;

@@ -32,25 +32,29 @@ struct DispatchArgs {
 @group(0) @binding(7) var<storage, read_write> indirect_args: DispatchArgs;
 
 
+struct PushConstantsBuildGrid {
+    cell_size: f32,
+    num_particles: u32,
+}
+
+var<push_constant> push_constants_build_grid: PushConstantsBuildGrid;
+
 
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn build_cell_ids_array(@builtin(global_invocation_id) global_id: vec3<u32>){
 
     let obj_id = global_id.x;
-    let CELL_SIZE = uniform_data.cell_size;
 
-    if obj_id >= uniform_data.num_particles {
+    if obj_id >= push_constants_build_grid.num_particles {
         return;
     }
-
-
 
     let pos = positions[obj_id];
     let radius = radius[obj_id];
     let sq_radius = radius*radius;
 
     // Convert to grid coordinates.
-    let home_cell_coord = vec2<i32>(floor(pos / CELL_SIZE));
+    let home_cell_coord = vec2<i32>(floor(pos / push_constants_build_grid.cell_size));
 
     // This is the base index for the cell ids and object ids array, for this object.
     let output_base_idx: u32 = obj_id * MAX_CELLS_PER_OBJECT;
@@ -103,8 +107,8 @@ fn cell_coord_to_hash(cell_coord: vec2<i32>) -> u32{
 }
 
 fn is_obj_in_cell(particle_pos: vec2<f32>, particle_sq_radius: f32, cell_coord: vec2<i32>) -> bool {
-    let cell_bottom_left_corner: vec2<f32> = vec2<f32>(cell_coord) * uniform_data.cell_size;
-    let cell_top_right_corner: vec2<f32> = cell_bottom_left_corner + vec2<f32>(uniform_data.cell_size);
+    let cell_bottom_left_corner: vec2<f32> = vec2<f32>(cell_coord) * push_constants_build_grid.cell_size;
+    let cell_top_right_corner: vec2<f32> = cell_bottom_left_corner + vec2<f32>(push_constants_build_grid.cell_size);
 
     // Closest point to the object center
     let closest_point = clamp(particle_pos, cell_bottom_left_corner, cell_top_right_corner);

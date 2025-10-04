@@ -1,5 +1,6 @@
 use glam::{Vec2, Vec4};
 use rand::{random_range, Rng};
+use wgpu::PushConstantRange;
 use wgpu::wgc::binding_model::BindGroup;
 use winit::event::{ElementState, MouseButton};
 use crate::{renderer::{camera::Camera, renderable::Renderable}, utils::gpu_buffer::GpuBuffer};
@@ -27,7 +28,7 @@ pub struct ParticleSystem {
     indices: GpuBuffer<u32>,
     max_radius: f32,
     render_pipeline: Option<wgpu::RenderPipeline>,
-    sim_params_buffer: GpuBuffer<SimParams>,
+    sim_params: SimParams,
     integration_pass: ComputeShader,
 }
 
@@ -48,13 +49,9 @@ impl ParticleSystem {
         let (buffers, max_radius) = Self::generate_initial_particles(wgpu_context, &world_size, NUM_PARTICLES);
 
 
-        let sim_params_buffer = GpuBuffer::new(
-            wgpu_context,
-            vec![SimParams { delta_time: 0.0, world_width: world_size.x, world_height: world_size.y, is_mouse_pressed: 0, mouse_pos: Vec2::new(0.0, 0.0) }],
-            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        );
+        let sim_params = SimParams { delta_time: 0.0, world_width: world_size.x, world_height: world_size.y, is_mouse_pressed: 0, mouse_pos: Vec2::new(0.0, 0.0) };
 
-        let particle_binding_group = Self::generate_particle_binding_group(&wgpu_context, &buffers, &sim_params_buffer);
+        let particle_binding_group = Self::generate_particle_binding_group(&wgpu_context, &buffers);
 
         let shader = wgpu_context.get_device().create_shader_module(wgpu::include_wgsl!("particle_system.wgsl"));
         let render_pipeline_layout = wgpu_context.get_device().create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
@@ -117,7 +114,7 @@ impl ParticleSystem {
             indices: Self::gen_model_indices(wgpu_context),
             max_radius,
             render_pipeline: Some(render_pipeline),
-            sim_params_buffer,
+            sim_params,
             integration_pass,
             particle_binding_group,
         }
@@ -125,7 +122,7 @@ impl ParticleSystem {
 
     pub fn new_from_buffers(wgpu_context: &WgpuContext, current_positions: GpuBuffer<Vec2>, radii: GpuBuffer<f32>) -> Self {
         let max_radius: f32 = radii.data().iter().max_by(|x, y| x.abs().partial_cmp(&y.abs()).unwrap()).unwrap().clone();
-        let sim_params_buffer = GpuBuffer::new(wgpu_context, vec![SimParams { delta_time: 0.0, world_width: 1920.0, world_height: 1080.0, is_mouse_pressed: 0, mouse_pos: Vec2::new(0.0, 0.0) }], wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST);
+        let sim_params = SimParams { delta_time: 0.0, world_width: 1920.0, world_height: 1080.0, is_mouse_pressed: 0, mouse_pos: Vec2::new(0.0, 0.0) };
         let previous_positions = GpuBuffer::new(wgpu_context, current_positions.data().clone(), wgpu::BufferUsages::STORAGE);
         let colors = GpuBuffer::new(wgpu_context, vec![glam::vec4(0.1, 0.4, 0.5, 1.0)], wgpu::BufferUsages::VERTEX);
 
@@ -136,7 +133,7 @@ impl ParticleSystem {
             colors,
         };
 
-        let particle_binding_group = Self::generate_particle_binding_group(&wgpu_context, &buffers, &sim_params_buffer);
+        let particle_binding_group = Self::generate_particle_binding_group(&wgpu_context, &buffers);
 
         let integration_pass = Self::gen_integration_pass(wgpu_context, &particle_binding_group);
 
@@ -146,7 +143,7 @@ impl ParticleSystem {
             indices: Self::gen_model_indices(wgpu_context),
             max_radius,
             render_pipeline: None,
-            sim_params_buffer,
+            sim_params,
             integration_pass,
             particle_binding_group,
         }
@@ -213,22 +210,22 @@ impl ParticleSystem {
     }
 
 
-    fn generate_particle_binding_group(wgpu_context: &WgpuContext, particle_buffers: &ParticleBuffers, sim_params: &GpuBuffer<SimParams>) -> BindResources {
+    fn generate_particle_binding_group(wgpu_context: &WgpuContext, particle_buffers: &ParticleBuffers) -> BindResources {
         let bind_group_layout_descriptor = wgpu::BindGroupLayoutDescriptor {
             label: Some("Bind Group Layout Descriptor"),
             entries: &[
-                // Binding 0: Simulation Parameters (delta_time, etc.)
+                // Binding 0: The particles' current positions
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
+                        ty: wgpu::BufferBindingType::Storage { read_only: false }, // false means read-write
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
                 },
-                // Binding 1: The particles' current positions
+                // Binding 1: The particles' previous positions
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::VERTEX,
@@ -239,20 +236,9 @@ impl ParticleSystem {
                     },
                     count: None,
                 },
-                // Binding 3: The particles' previous positions
+                // Binding 2: The particles' radius
                 wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false }, // false means read-write
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                // Binding 4: The particles' radius
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
+                    binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -274,18 +260,14 @@ impl ParticleSystem {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: sim_params.buffer().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
                         resource: particle_buffers.current_positions.buffer().as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 3,
+                        binding: 1,
                         resource: particle_buffers.previous_positions.buffer().as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 4,
+                        binding: 2,
                         resource: particle_buffers.radii.buffer().as_entire_binding(),
                     },
                 ],
@@ -306,7 +288,12 @@ impl ParticleSystem {
             &particle_binding_group.bind_group_layout,
             WORKGROUP_SIZE,
             &vec![],
-            &vec![]
+            &vec![
+                PushConstantRange{
+                    stages: wgpu::ShaderStages::COMPUTE,
+                    range: 0..size_of::<SimParams>() as u32
+                }
+            ]
         )
     }
     pub fn len(&self) -> usize {
@@ -374,34 +361,17 @@ impl ParticleSystem {
             );
         }
 
-        self.particle_binding_group =  Self::generate_particle_binding_group(wgpu_context, &self.particle_buffers, &self.sim_params_buffer);
+        self.particle_binding_group =  Self::generate_particle_binding_group(wgpu_context, &self.particle_buffers);
         
         println!("Total particles: {}", self.particle_buffers.current_positions.len());
     }
-    pub fn mouse_click_callback(&mut self, wgpu_context: &WgpuContext, mouse_state: &ElementState, position: Vec2){
-        let old_sim_params = self.sim_params_buffer.data()[0];
-
-        let sim_params = SimParams {
-            delta_time: old_sim_params.delta_time,
-            world_width: old_sim_params.world_width,
-            world_height: old_sim_params.world_height,
-            is_mouse_pressed: mouse_state.is_pressed() as u32,
-            mouse_pos: position,
-        };
-        self.sim_params_buffer.replace_elem(sim_params, 0, wgpu_context);
+    pub fn mouse_click_callback(&mut self, mouse_state: &ElementState, position: Vec2){
+        self.sim_params.is_mouse_pressed = mouse_state.is_pressed() as u32;
+        self.sim_params.mouse_pos = position;
     }
-    pub fn mouse_move_callback(&mut self, wgpu_context: &WgpuContext, position: Vec2){
-        let old_sim_params = self.sim_params_buffer.data()[0];
-        
-        if old_sim_params.is_mouse_pressed == 1 {
-            let sim_params = SimParams {
-                delta_time: old_sim_params.delta_time,
-                world_width: old_sim_params.world_width,
-                world_height: old_sim_params.world_height,
-                is_mouse_pressed: old_sim_params.is_mouse_pressed,
-                mouse_pos: position,
-            };
-            self.sim_params_buffer.replace_elem(sim_params, 0, wgpu_context);
+    pub fn mouse_move_callback(&mut self, position: Vec2){
+        if self.sim_params.is_mouse_pressed == 1 {
+            self.sim_params.mouse_pos = position;
         }
     }
 
@@ -422,21 +392,8 @@ impl Renderable for ParticleSystem {
 
     #[cfg(feature = "benchmark")]
     fn update(&mut self, delta_time:f32, world_size:&Vec2, wgpu_context: &WgpuContext, gpu_timer: &mut GpuTimer) {
-        let old_sim_params = self.sim_params_buffer.data()[0];
+        self.sim_params.delta_time = delta_time;
 
-        // First, update the delta_time in the uniform buffer
-        let sim_params = SimParams {
-            delta_time,
-            world_width: world_size.x, 
-            world_height: world_size.y,
-            is_mouse_pressed: old_sim_params.is_mouse_pressed,
-            mouse_pos: old_sim_params.mouse_pos,
-        };
-        wgpu_context.get_queue().write_buffer(
-            &self.sim_params_buffer.buffer(),
-            0,
-            bytemuck::cast_slice(&[sim_params]),
-        );
 
         // Create a command encoder to build the command buffer
         let mut encoder = wgpu_context.get_device().create_command_encoder(
@@ -445,10 +402,10 @@ impl Renderable for ParticleSystem {
 
         gpu_timer.begin_frame();
         gpu_timer.scope("Integration pass", &mut encoder, |encoder| {
-            self.integration_pass.dispatch_by_items::<u32>(
+            self.integration_pass.dispatch_by_items(
                 encoder,
                 (self.particle_buffers.current_positions.data().len() as u32, 1, 1),
-                None,
+                Some(vec![(0, bytemuck::bytes_of(&self.sim_params))]),
                 &self.particle_binding_group.bind_group,
             );
         });
@@ -463,31 +420,17 @@ impl Renderable for ParticleSystem {
 
     #[cfg(not(feature = "benchmark"))]
     fn update(&mut self, delta_time:f32, _world_size:&Vec2, wgpu_context: &WgpuContext) {
-        let old_sim_params = self.sim_params_buffer.data()[0];
+        self.sim_params.delta_time = delta_time;
         
-        // First, update the delta_time in the uniform buffer
-        let sim_params = SimParams {
-            delta_time,
-            world_width: old_sim_params.world_width,
-            world_height: old_sim_params.world_height,
-            is_mouse_pressed: old_sim_params.is_mouse_pressed, 
-            mouse_pos: old_sim_params.mouse_pos,
-        };
-        wgpu_context.get_queue().write_buffer(
-            &self.sim_params_buffer.buffer(),
-            0,
-            bytemuck::cast_slice(&[sim_params]),
-        );
-
         // Create a command encoder to build the command buffer
         let mut encoder = wgpu_context.get_device().create_command_encoder(
             &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
         );
         
-        self.integration_pass.dispatch_by_items::<u32>(
+        self.integration_pass.dispatch_by_items(
             &mut encoder,
             (self.particle_buffers.current_positions.data().len() as u32, 1, 1),
-            None,
+            Some(vec![(0, bytemuck::bytes_of(&self.sim_params))]),
             &self.particle_binding_group.bind_group
         );
         
