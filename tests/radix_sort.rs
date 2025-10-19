@@ -27,7 +27,7 @@ fn sort_test() {
     });
 
 
-    sorter.sort(&mut encoder, wgpu_context, None);
+    sorter.sort(&mut encoder, None);
     let idx = queue.submit([encoder.finish()]);
     device.poll(WaitForSubmissionIndex(idx)).unwrap();
 

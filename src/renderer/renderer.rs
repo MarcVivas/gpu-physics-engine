@@ -1,16 +1,13 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use wgpu_profiler::GpuProfiler;
 use winit::dpi::PhysicalPosition;
 use winit::event::MouseScrollDelta;
-use winit::keyboard::{Key, KeyCode};
-use crate::renderer::camera::{Camera, CameraController};
+use winit::keyboard::{KeyCode};
+use crate::renderer::camera::{Camera};
 use crate::renderer::renderable::Renderable;
 use crate::renderer::wgpu_context::WgpuContext;
-use crate::utils::gpu_timer::GpuTimer;
 
 // Manages multiple render pipelines
 pub struct Renderer {
-    renderables: Vec<Rc<RefCell<dyn Renderable>>>,
     background_color: wgpu::Color,
     camera: Camera,
 }
@@ -23,19 +20,11 @@ impl Renderer {
         let camera = Camera::new(world_size, &wgpu_context);
 
         Some(Self {
-            renderables: vec![
-
-            ],
             background_color: wgpu::Color::BLACK,
             camera,
         })
     }
-
-    pub fn add_renderable(&mut self, renderable: Rc<RefCell<dyn Renderable>>) {
-        self.renderables.push(renderable);
-    }
-
-    pub fn render(&self, wgpu_context: &WgpuContext) -> Result<(), wgpu::SurfaceError>{
+    pub fn render(&self, wgpu_context: &WgpuContext, renderables: &[&dyn Renderable], gpu_profiler: &mut GpuProfiler) -> Result<(), wgpu::SurfaceError>{
         wgpu_context.get_window().request_redraw();
 
         // We can't render unless the window is configured
@@ -55,7 +44,8 @@ impl Renderer {
 
         // Use encoder to create a RenderPass
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor{
+            let mut scope_encoder = gpu_profiler.scope("Render pass", &mut encoder);
+            let mut render_pass = scope_encoder.begin_render_pass(&wgpu::RenderPassDescriptor{
                 label: Some("Render Pass"),
                 color_attachments: &[
                     Some(wgpu::RenderPassColorAttachment{
@@ -73,11 +63,12 @@ impl Renderer {
             });
 
             // Draw all renderables
-            for renderable in &self.renderables {
-                renderable.borrow().draw(&mut render_pass, &self.camera);
+            for renderable in renderables {
+                renderable.draw(&mut render_pass, &self.camera);
             }
         }
-
+        
+        gpu_profiler.resolve_queries(&mut encoder);
         wgpu_context.get_queue().submit(std::iter::once(encoder.finish()));
         output.present();
         Ok(())
@@ -101,30 +92,14 @@ impl Renderer {
     
 
     // Update renderables
-    #[cfg(feature = "benchmark")]
-    pub fn update(&mut self, dt: f32, wgpu_context: &WgpuContext, world_size: &glam::Vec2, gpu_timer: &mut GpuTimer) {
+    pub fn update(&mut self, dt: f32, wgpu_context: &WgpuContext, gpu_profiler: &mut GpuProfiler) {
         // Update camera based on input and delta time
         self.camera.update(dt, &wgpu_context.window_size());
-        for renderable in &mut self.renderables {
-            renderable.borrow_mut().update(dt, world_size, wgpu_context, gpu_timer);
-        }
         // Update camera matrices and upload to GPU
         self.update_camera_matrices(wgpu_context);
     }
 
-    /// Update renderables
-    #[cfg(not(feature = "benchmark"))]
-    pub fn update(&mut self, dt: f32, wgpu_context: &WgpuContext, world_size: &glam::Vec2) {
-        // Update camera based on input and delta time
-        self.camera.update(dt, &wgpu_context.window_size());
-        for renderable in &mut self.renderables {
-            renderable.borrow_mut().update(dt, world_size, wgpu_context);
-        }
-        // Update camera matrices and upload to GPU
-        self.update_camera_matrices(wgpu_context);
-    }
-
-    pub fn update_camera_matrices(&mut self, wgpu_context: &WgpuContext) {
+    fn update_camera_matrices(&mut self, wgpu_context: &WgpuContext) {
         self.camera.build_view_projection_matrix(
             &wgpu_context.window_size(),
         );

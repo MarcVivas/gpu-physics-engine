@@ -220,8 +220,8 @@
         }
     }
 
-    use winit::event::{WindowEvent, KeyEvent, MouseScrollDelta};
-    use winit::keyboard::{KeyCode, PhysicalKey};
+    use winit::event::{MouseScrollDelta};
+    use winit::keyboard::{KeyCode};
     use crate::renderer::wgpu_context::WgpuContext;
 
     #[derive(Debug)]

@@ -5,3 +5,4 @@ pub mod particles;
 pub mod state;
 pub mod grid;
 pub mod app;
+pub mod physics;

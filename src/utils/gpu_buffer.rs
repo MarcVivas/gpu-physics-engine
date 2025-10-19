@@ -142,7 +142,8 @@ impl<T: bytemuck::Pod> GpuBuffer<T>{
             // When the mapping is complete, the result is sent to our channel.
             sender.send(result).unwrap();
         });
-
+        
+        
         device.poll(Wait).unwrap();
 
 

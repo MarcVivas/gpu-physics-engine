@@ -1,8 +1,6 @@
-use std::cell::RefCell;
-use std::ptr::with_exposed_provenance;
-use std::rc::Rc;
 use std::sync::{Arc};
 use glam::Vec2;
+use wgpu_profiler::{GpuProfiler, GpuProfilerSettings};
 use winit::dpi;
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
@@ -14,7 +12,10 @@ use crate::utils::render_timer::RenderTimer;
 use crate::renderer::renderer::Renderer;
 use crate::renderer::wgpu_context::WgpuContext;
 use crate::grid::grid::Grid;
-use crate::utils::gpu_timer::GpuTimer;
+use crate::physics::collision_system::CollisionSystem;
+use crate::renderer::renderable::Renderable;
+
+const DIMENSION: u32 = 2; 
 
 // This will store the state of the program
 pub struct State {
@@ -22,30 +23,39 @@ pub struct State {
     wgpu_context: WgpuContext,
     render_timer: RenderTimer,
     renderer: Renderer,
-    particles: Rc<RefCell<ParticleSystem>>,
-    grid: Rc<RefCell<Grid>>,
+    particles: ParticleSystem,
+    grid: Grid,
+    collision_system: CollisionSystem,
     mouse_position: Option<dpi::PhysicalPosition<f64>>,
-    gpu_timer: GpuTimer,
+    gpu_profiler: GpuProfiler,
 }
 
 impl State {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
-        let world_size = Vec2::new(4920.0, 2080.0);
+        // Important note: The world size must be a power of 2 and have the width and height equal
+        let world_size = Vec2::new(2048.0, 2048.0);
         let wgpu_context = WgpuContext::new(window).await?;
-        let mut renderer = Renderer::new(&wgpu_context, &world_size).unwrap();
+        let renderer = Renderer::new(&wgpu_context, &world_size).unwrap();
 
-        let particles = Rc::new(RefCell::new(ParticleSystem::new(&wgpu_context, renderer.camera(), world_size)));
-        let grid =  Rc::new(RefCell::new(Grid::new(&wgpu_context, renderer.camera(), world_size, particles.borrow().get_max_radius(), particles.clone())));
-
-        renderer.add_renderable(particles.clone());
-        renderer.add_renderable(grid.clone());
+        let particles = ParticleSystem::new(&wgpu_context, renderer.camera(), world_size);
+        let grid =  Grid::new(&wgpu_context, renderer.camera(), world_size, &particles);
 
         let render_timer = RenderTimer::new();
 
         let mouse_position = None;
         
-        let gpu_timer = GpuTimer::new(wgpu_context.get_device(), wgpu_context.get_queue(), 10);
         
+        #[cfg(feature = "benchmark")]
+        let gpu_profiler = GpuProfiler::new(wgpu_context.get_device(), GpuProfilerSettings::default())?;
+        #[cfg(not(feature = "benchmark"))]
+        let gpu_profiler = GpuProfiler::new(wgpu_context.get_device(), GpuProfilerSettings{
+            enable_timer_queries: false,
+            enable_debug_groups: false,
+            max_num_pending_frames: 1
+        })?;
+        
+        let collision_system = CollisionSystem::new(&wgpu_context, DIMENSION, &particles, &grid);
+
         Ok(Self {
             world_size,
             wgpu_context,
@@ -54,13 +64,14 @@ impl State {
             renderer,
             mouse_position,
             grid,
-            gpu_timer,
+            gpu_profiler,
+            collision_system
         })
 
     }
 
     
-    
+    /// This function is called every frame
     pub fn render_loop(&mut self, event: &WindowEvent, event_loop: &ActiveEventLoop){
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
@@ -94,35 +105,39 @@ impl State {
                 log::error!("Unable to render: {:?}", e);
             }
         }
+
+        self.gpu_profiler.end_frame().unwrap();
+        #[cfg(feature = "benchmark")]
+        if let Some(profiling_data) = self.gpu_profiler.process_finished_frame(self.wgpu_context.get_queue().get_timestamp_period()) {
+            wgpu_profiler::chrometrace::write_chrometrace(std::path::Path::new("benchmark.json"), &profiling_data).unwrap();
+        }
     }
     
-    #[cfg(feature = "benchmark")]
     fn update(&mut self){
         let dt = self.render_timer.get_delta().as_secs_f32();
-        // Update renderer with delta time (includes camera update)
-        self.renderer.update(dt, &self.wgpu_context, &self.world_size, &mut self.gpu_timer);
-    }
 
-    #[cfg(not(feature = "benchmark"))]
-    fn update(&mut self){
-        let dt = self.render_timer.get_delta().as_secs_f32();
+        {
+            let mut encoder = self.wgpu_context.get_device().create_command_encoder(
+                &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
+            );
+            self.grid.update(&mut encoder, &self.wgpu_context, &mut self.gpu_profiler);
+            self.collision_system.solve_collisions(&self.wgpu_context, dt, encoder,&mut self.gpu_profiler);
+        }
+        
+        self.particles.update_positions(dt, &self.wgpu_context, &mut self.gpu_profiler);
+        
         // Update renderer with delta time (includes camera update)
-        self.renderer.update(dt, &self.wgpu_context, &self.world_size);
+        self.renderer.update(dt, &self.wgpu_context, &mut self.gpu_profiler);
     }
-
-    fn render(&mut self)  -> Result<(), wgpu::SurfaceError>{
-        self.renderer.render(&self.wgpu_context)?;
+    
+    fn render(&mut self)  -> anyhow::Result<(), wgpu::SurfaceError>{
+        let renderables: Vec<&dyn Renderable> = vec![&self.particles, &self.grid,];
+        self.renderer.render(&self.wgpu_context, &renderables, &mut self.gpu_profiler)?;
         Ok(())
     }
 }
 
 impl State {
-    pub fn get_particles(&self) -> Rc<RefCell<ParticleSystem>> {
-        self.particles.clone()
-    }
-    pub fn get_grid(&self) -> Rc<RefCell<Grid>> {
-        self.grid.clone()
-    }
     pub fn get_mouse_position(&self) -> Option<dpi::PhysicalPosition<f64>> {
         self.mouse_position
     }
@@ -140,11 +155,14 @@ impl State {
 }
 
 impl State {
+    pub fn get_mouse_world_position(&self) -> Vec2 {
+        self.get_renderer().camera().screen_to_world(&self.get_wgpu_context().window_size(), &Vec2::new(self.get_mouse_position().unwrap().x as f32, self.get_mouse_position().unwrap().y as f32))
+    }
     pub fn set_mouse_position(&mut self, position: Option<dpi::PhysicalPosition<f64>>) {
         self.mouse_position = position;
         self.renderer.set_camera_zoom_position(position);
-        let world_position = self.get_renderer().camera().screen_to_world(&self.get_wgpu_context().window_size(), &Vec2::new(self.get_mouse_position().unwrap().x as f32, self.get_mouse_position().unwrap().y as f32));
-        self.particles.borrow_mut().mouse_move_callback(world_position);
+        let world_position = self.get_mouse_world_position();
+        self.particles.mouse_move_callback(world_position);
     }
 }
 
@@ -158,16 +176,28 @@ impl State {
     
     pub fn mouse_click_callback(&mut self, mouse_state: &ElementState, button: &MouseButton){
         if button == &MouseButton::Left {
-            let position = self.get_renderer().camera().screen_to_world(&self.get_wgpu_context().window_size(), &Vec2::new(self.get_mouse_position().unwrap().x as f32, self.get_mouse_position().unwrap().y as f32));
-            self.particles.borrow_mut().mouse_click_callback(mouse_state, position);
+            let position = self.get_mouse_world_position();
+            self.particles.mouse_click_callback(mouse_state, position);
         }
+    }
+
+    pub fn add_particles(&mut self){
+        let mouse_world_pos = self.get_mouse_world_position();
+        let prev_num_particles = self.particles.positions().len();
+        self.particles.add_particles(
+            &mouse_world_pos,
+            &self.wgpu_context
+        );
         
+        let camera = self.renderer.camera();
+        let world_size = self.get_world_size();
+        self.grid.refresh_grid(&self.wgpu_context, camera, world_size, &self.particles, prev_num_particles);
+        let particles_added = self.particles.positions().len() - prev_num_particles;
+        self.collision_system.refresh(&self.wgpu_context, &self.particles, &self.grid, particles_added); 
+    }
+    
+    pub fn toggle_grid_drawing(&mut self){
+        self.grid.toggle_grid_drawing();
     }
 }
 
-#[cfg(feature = "benchmark")]
-impl Drop for State {
-    fn drop(&mut self) {
-        self.gpu_timer.report(&self.wgpu_context);
-    }
-}

@@ -7,18 +7,16 @@
 */
 
 use std::{
-    mem,
-    num::{NonZeroU32, NonZeroU64},
+    num::{NonZeroU32},
 };
 
 use bytemuck::bytes_of;
-use wgpu::{include_wgsl, util::DeviceExt, BufferAsyncError, PushConstantRange};
+use wgpu::{include_wgsl, BufferAsyncError, PushConstantRange};
 use crate::renderer::wgpu_context::WgpuContext;
 use crate::utils::bind_resources::BindResources;
 use crate::utils::compute_shader::ComputeShader;
 use crate::utils::get_subgroup_size;
 use crate::utils::gpu_buffer::GpuBuffer;
-use crate::utils::radix_sort::radix_sort;
 
 pub const WORKGROUP_SIZE: (u32, u32, u32) = (256, 1, 1);
 
@@ -47,7 +45,6 @@ pub struct GPUSorter {
     histogram_shader: ComputeShader,
     scatter_shader: ComputeShader,
     sorting_buffers: SortBuffers,
-    bind_resources: BindResources
 }
 
 
@@ -114,7 +111,6 @@ impl GPUSorter {
             histogram_shader,
             scatter_shader,
             sorting_buffers,
-            bind_resources,
         }
     }
 
@@ -200,7 +196,7 @@ impl GPUSorter {
             ping_pong_bind_group       
         );
     }
-    pub fn sort(&mut self, encoder: &mut wgpu::CommandEncoder, wgpu_context: &WgpuContext, sort_first_n:Option<u32>) {
+    pub fn sort(&mut self, encoder: &mut wgpu::CommandEncoder, sort_first_n:Option<u32>) {
         let sort_buffers = &self.sorting_buffers;
         
         let num_elements = sort_first_n.unwrap_or(sort_buffers.len());
@@ -235,7 +231,7 @@ impl GPUSorter {
         sort_buffers: &SortBuffers,
         dispatch_buffer: &wgpu::Buffer,
     ) {
-        let bind_group = &sort_buffers.bind_group_ping;
+        todo!();
 
     }
 

@@ -1,5 +1,5 @@
 use bytemuck::bytes_of;
-use wgpu::{BindGroup, CommandEncoder, PushConstantRange};
+use wgpu::{CommandEncoder, PushConstantRange};
 use crate::renderer::wgpu_context::WgpuContext;
 use crate::utils::bind_resources::BindResources;
 use crate::utils::compute_shader::ComputeShader;
@@ -156,7 +156,7 @@ impl PrefixSum {
 
         // Pass 3: Dispatch one thread for each number of items to add the block_sums to the buffer.
         self.third_pass.dispatch_by_items(encoder, (num_items, 1, 1), Some(vec![(0, bytes_of(&num_items))]), &self.bind_resources.bind_group);
-        
+
     }
     
     fn get_max_possible_block_sums(buffer: &GpuBuffer<u32>) -> usize{

@@ -1,8 +1,7 @@
-use glam::Vec2;
 use winit::dpi::PhysicalPosition;
-use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta};
 use winit::event_loop::ActiveEventLoop;
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::keyboard::{KeyCode};
 use crate::state::State;
 
 pub struct InputManager {}
@@ -14,15 +13,10 @@ impl InputManager {
         match (code, key_state.is_pressed()) {
             (KeyCode::Escape, true) => event_loop.exit(),
             (KeyCode::KeyP, true) => {
-                let prev_num_particles = state.get_particles().borrow().positions().len();
-                state.get_particles().borrow_mut().add_particles(
-                    &state.get_renderer().camera().screen_to_world(&state.get_wgpu_context().window_size(), &Vec2::new(state.get_mouse_position().unwrap().x as f32, state.get_mouse_position().unwrap().y as f32)),
-                    state.get_wgpu_context()
-                );
-                state.get_grid().borrow_mut().refresh_grid(state.get_wgpu_context(), state.get_renderer().camera(), state.get_world_size(), state.get_particles(), prev_num_particles);
+                state.add_particles();
             },
             (KeyCode::KeyG, true) => {
-                state.get_grid().borrow_mut().render_grid();
+                state.toggle_grid_drawing();
             },
             (KeyCode::KeyW | KeyCode::ArrowUp, true) => {
                 state.move_camera(KeyCode::KeyW, true);

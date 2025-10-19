@@ -1,6 +1,6 @@
 // in renderer/compute_shader.rs
 
-use wgpu::{BindGroup, PushConstantRange};
+use wgpu::{BindGroup, CommandEncoder, PushConstantRange};
 use crate::renderer::wgpu_context::WgpuContext;
 
 pub struct ComputeShader {
@@ -49,7 +49,7 @@ impl ComputeShader {
     /// Dispatches the compute shader.
     pub fn dispatch(
         &self,
-        encoder: &mut wgpu::CommandEncoder,
+        encoder: &mut CommandEncoder,
         dispatch_size: (u32, u32, u32),
         push_constants_data: Option<Vec<(u32, &[u8])>>,
         bind_group: &BindGroup,
@@ -80,7 +80,7 @@ impl ComputeShader {
     /// A helper function to dispatch based on the total number of items to process.
     pub fn dispatch_by_items(
         &self,
-        encoder: &mut wgpu::CommandEncoder,
+        encoder: &mut CommandEncoder,
         item_count: (u32, u32, u32),
         push_constants_data: Option<Vec<(u32, &[u8])>>,
         bind_group: &BindGroup,
@@ -100,13 +100,17 @@ impl ComputeShader {
     
     pub fn indirect_dispatch(
         &self,
-        encoder: &mut wgpu::CommandEncoder,
+        encoder: &mut CommandEncoder,
         indirect_buffer: &wgpu::Buffer,
         indirect_offset: u64,
         push_constants_data: Option<Vec<(u32, &[u8])>>,
         bind_group: &BindGroup,
     ) {
         let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("Solve Pass"), timestamp_writes: None });
+
+
+        compute_pass.set_pipeline(&self.pipeline);
+
 
         if let Some(constants) = push_constants_data {
             for (offset, data) in constants {
@@ -116,8 +120,7 @@ impl ComputeShader {
                 );
             }
         }
-
-        compute_pass.set_pipeline(&self.pipeline);
+        
         compute_pass.set_bind_group(0, bind_group, &[]);
         compute_pass.dispatch_workgroups_indirect(indirect_buffer, indirect_offset);
     }
