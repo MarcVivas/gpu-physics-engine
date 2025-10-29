@@ -1,4 +1,5 @@
 override WORKGROUP_SIZE = 64u;
+const STIFFNESS: f32 = 0.6;
 
 
 struct UniformData {
@@ -94,11 +95,10 @@ fn resolve_cell_collisons(cell_hash: u32, start: u32) {
             if are_colliding(distance * distance, obj_1_radius, obj_2_radius) && distance > 0.0001{
                 // Solve collision
                 let penetration_depth = (obj_1_radius + obj_2_radius) - distance;
-                let stiffness = 0.8; // A value between 0.0 and 1.0. Higher is "harder".
                 let collision_direction_vector = vec_i_j / distance;
 
 
-                let correction_vector: vec2<f32> = collision_direction_vector * penetration_depth * stiffness;
+                let correction_vector: vec2<f32> = collision_direction_vector * penetration_depth * STIFFNESS;
 
                 let inv_mass_1 = 1/obj_1_radius;
                 let inv_mass_2 = 1/obj_2_radius;

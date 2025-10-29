@@ -75,7 +75,7 @@ impl Grid {
         let total_particles: usize = particle_system.len();
         let dim: u32 = 2;
         let buffer_len = total_particles * 2usize.pow(dim); // A particle can be in 2**dim different cells
-        let cell_size = Self::get_cell_size(max_obj_radius);
+        let cell_size = Self::compute_cell_size(max_obj_radius);
         
         let cell_ids = GpuBuffer::new(
             wgpu_context,
@@ -156,8 +156,12 @@ impl Grid {
         self.should_draw_grid = !self.should_draw_grid;
     }
 
-    pub fn get_cell_size(max_obj_radius: f32) -> f32 {
+    pub fn compute_cell_size(max_obj_radius: f32) -> f32 {
         max_obj_radius * CELL_SIZE_MULTIPLIER
+    }
+    
+    pub fn cell_size(&self) -> f32 {
+        self.cell_size
     }
     
     fn create_binding_group_layout(wgpu_context: &WgpuContext) -> wgpu::BindGroupLayout{
@@ -259,9 +263,19 @@ impl Grid {
     /// Refreshes the grid when elements have been added or removed.
     /// This function is called when the particles system is updated.
     pub fn refresh_grid(&mut self, wgpu_context: &WgpuContext, camera: &Camera, world_dimensions: Vec2, particle_system: &ParticleSystem, prev_total_particles: usize){
-        self.cell_size = Grid::get_cell_size(particle_system.get_max_radius());
+        self.cell_size = Grid::compute_cell_size(particle_system.get_max_radius());
         self.num_elements = particle_system.len();
         let particles_added = self.num_elements - prev_total_particles;
+
+        // Update the uniform
+
+        let new_uniform: UniformData = UniformData {
+            num_particles: self.num_elements as u32,
+            num_collision_cells: self.num_elements as u32 * 2u32.pow(self.dim),
+            cell_size: self.cell_size,
+        };
+        self.grid_buffers.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
+        
         
         // Recreate the grid drawer
         self.grid_drawer = Some(GridDrawer::new(wgpu_context, camera, &world_dimensions, self.cell_size));
@@ -305,20 +319,7 @@ impl Grid {
         Ok(self.grid_buffers.object_ids.download(wgpu_context)?.clone())
     }
     
-    pub fn update(&mut self, encoder: &mut CommandEncoder, wgpu_context: &WgpuContext, gpu_profiler: &mut GpuProfiler){
-        // Update the uniform if needed
-        let total_particles = self.num_elements as u32;
-        let prev_num_particles = self.grid_buffers.uniform_buffer.data()[0].num_particles;
-        // TODO: Move this out of here
-        if total_particles != prev_num_particles {
-            let new_uniform: UniformData = UniformData {
-                num_particles: total_particles,
-                num_collision_cells: total_particles * 2u32.pow(self.dim),
-                cell_size: self.cell_size,
-            };
-            self.grid_buffers.uniform_buffer.replace_elem(new_uniform, 0, wgpu_context);
-        }
-
+    pub fn update(&mut self, encoder: &mut CommandEncoder, gpu_profiler: &mut GpuProfiler){
         {
             let mut scope = gpu_profiler.scope("Build cell ids", encoder);
             self.build_cell_ids(&mut scope);

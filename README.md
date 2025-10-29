@@ -38,7 +38,7 @@ cargo test
 ```
 
 ### Benchmark
-The benchmark shows the performance for each of the compute shaders at the end of the execution.
+The benchmark shows the performance for each of the compute shaders at the end of the execution. It creates `benchmark.json` file that can be visualized at `edge://tracing/` or `chrome://tracing/`. 
 ```
 cargo run --release --features benchmark
 ```
@@ -47,7 +47,7 @@ cargo run --release --features benchmark
 ## 🔧 Implementation Details
 
 ### GPU Spatial Grid Partitioning
-The engine uses a sophisticated spatial partitioning system that divides the simulation space into a uniform grid. Each particle is assigned to grid cells, dramatically reducing the number of collision checks from O(n²) to approximately O(n + k) in most cases.
+The engine uses a sophisticated spatial partitioning system that divides the simulation space into a uniform grid. Each particle is assigned to grid cells, dramatically reducing the number of collision checks from O(n²) to approximately O(n*k) in most cases.
 
 **Learn more**: [NVIDIA GPU Gems - Broad-Phase Collision Detection](https://developer.nvidia.com/gpugems/gpugems3/part-v-physics-simulation/chapter-32-broad-phase-collision-detection-cuda)
 
@@ -57,6 +57,9 @@ All collision detection and response calculations are performed in parallel on t
 ### Verlet Integration
 The engine employs Verlet integration for numerical stability and energy conservation, ensuring smooth and realistic particle motion over time.
 
+## Morton encoding
+Every 4 seconds, the particles are sorted using morton codes to improve cache locality. 
+
 ### Current Limitations
 - **2D Only**: Currently supports 2D simulations
 - **Circle Shapes**: Only circular particles are supported at this time
@@ -64,11 +67,24 @@ The engine employs Verlet integration for numerical stability and energy conserv
 ## 📊 Performance
 
 **Test Configuration:**
-- **GPU**: AMD Radeon RX 6800 XT
+- **GPU**: AMD Radeon RX 6800 XT (with severe thermal throttling)
 - **OS**: Windows 11
 - **Build**: Release mode (`--release`)
+- **Gravity**: disabled
 
 The engine demonstrates excellent scaling characteristics, maintaining smooth framerates even with millions of active particles thanks to GPU parallelization.
+![Performance Graph](./images/performance_graph.png)
+
+| Particles | Frame Time |
+|-----------|------------|
+| 100,000   | 1.03 ms    |
+| 256,000   | 1.28 ms    |
+| 512,000   | 1.88 ms    |
+| 756,000   | 2.53 ms    |
+| 1,000,000 | 3.66 ms    |
+| 2,000,000 | 8.417 ms   |
+| 3,000,000 | 15.62 ms   |
+| 4,000,000 | 22.70 ms   |
 
 ## 🔮 Future Enhancements
 

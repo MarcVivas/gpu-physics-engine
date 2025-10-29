@@ -16,13 +16,10 @@ struct SimParams {
 
 var<push_constant> push_constants: SimParams;
 
-// The Compute Shader
-// WORKGROUP_SIZE is the number of threads we run in a block. 
 const WORKGROUP_SIZE: u32 = 64u;
 
-const FORCE_OF_GRAVITY: vec2<f32> = vec2<f32>(0.0, -9.8);
+const FORCE_OF_GRAVITY: vec2<f32> = vec2<f32>(0.0, 0.0);
 const MOUSE_ATTRACTION_STRENGTH: f32 = 150.0;
-
 
 @compute @workgroup_size(WORKGROUP_SIZE)
 fn verlet_integration(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -40,7 +37,7 @@ fn verlet_integration(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
 
     // Verlet integration
-    let velocity: vec2<f32> = 2*current_position - previous_position;
+    let velocity: vec2<f32> = (current_position - previous_position);
 
     var total_acceleration = FORCE_OF_GRAVITY;
 
@@ -59,7 +56,7 @@ fn verlet_integration(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     // Predict the next position without applying constraints
     let dt_squared = push_constants.delta_time * push_constants.delta_time;
-    var predicted_position: vec2<f32> = velocity + total_acceleration * dt_squared;
+    var predicted_position: vec2<f32> = current_position + velocity + total_acceleration * dt_squared;
 
 
     // Update the previous position

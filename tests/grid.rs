@@ -2,8 +2,6 @@ mod common;
 
 use game_engine::grid::grid::Grid;
 use glam::Vec2;
-use std::rc::Rc;
-use std::cell::RefCell;
 use wgpu_profiler::{GpuProfiler, GpuProfilerSettings};
 use game_engine::particles::particle_system::ParticleSystem;
 use game_engine::physics::collision_system::CollisionSystem;
@@ -23,7 +21,7 @@ fn test_grid_build_cell_ids_with_multiple_particles() {
     let mut expected_object_ids: Vec<u32> = Vec::new();
 
     // --- Particle 0 Results ---
-    // Pos: (20, 42), Radius: 10.0, Home Cell: (0, 1) -> hash 65536
+    // Pos: (20, 42), Radius: 10.0, Home Cell: (0, 1) -> hash 
     // Neighbors: (1,1), (0,2), (1,2)
     expected_cell_ids.extend_from_slice(&[
         morton_encode(0, 1),  // Home cell (0, 1)
@@ -34,7 +32,7 @@ fn test_grid_build_cell_ids_with_multiple_particles() {
     expected_object_ids.extend_from_slice(&[0, 0, 0, 0]);
 
     // --- Particle 1 Results ---
-    // Pos: (77, 77), Radius: 8.0, Home Cell: (3, 3) -> hash 196611
+    // Pos: (77, 77), Radius: 8.0, Home Cell: (3, 3) -> hash 
     // No neighbors touched.
     expected_cell_ids.extend_from_slice(&[
         morton_encode(3, 3),       // Home cell (3, 3)
@@ -116,9 +114,8 @@ fn build_case_1(wgpu_context: &WgpuContext) -> (Grid, ParticleSystem) {
         // Particle 2: Edge case at the origin, fully contained.
         Vec2::new(5.0, 5.0),
     ];
-    let num_particles = particle_positions.len();
     
-    // Give each particles a different radius to ensure the radius buffer is read correctly.
+    // Give each particle a different radius to ensure the radius buffer is read correctly.
     let particle_radii = vec![10.0, 8.0, 1.0];
 
     let particle_system = common::create_test_particle_system(
@@ -218,7 +215,7 @@ pub fn test_grid_build_cell_ids_sort_and_build_empty_collision_cells_list(){
     
     grid.build_cell_ids(&mut encoder);
     grid.sort_map(&mut encoder);
-    collision_system.solve_collisions(wgpu_context, 0.01, encoder, &mut GpuProfiler::new(wgpu_context.get_device(), GpuProfilerSettings::default()).unwrap());
+    collision_system.solve_collisions(wgpu_context, encoder, &mut GpuProfiler::new(wgpu_context.get_device(), GpuProfilerSettings::default()).unwrap());
     
 
     let expected_collision_cells: Vec<u32> = vec![UNUSED_CELL_ID; grid.download_object_ids(wgpu_context).unwrap().len()];
@@ -283,7 +280,7 @@ pub fn test_grid_build_cell_ids_sort_and_build_collision_cells_list(){
 
     grid.build_cell_ids(&mut encoder);
     grid.sort_map(&mut encoder);
-    collision_system.solve_collisions(wgpu_context,0.001, encoder, &mut GpuProfiler::new(wgpu_context.get_device(), GpuProfilerSettings::default()).unwrap());
+    collision_system.solve_collisions(wgpu_context, encoder, &mut GpuProfiler::new(wgpu_context.get_device(), GpuProfilerSettings::default()).unwrap());
     
 
     let mut expected_collision_cells: Vec<u32> = (0u32..4u32).map(|i| i * num_particles as u32).collect();

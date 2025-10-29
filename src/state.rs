@@ -32,8 +32,7 @@ pub struct State {
 
 impl State {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
-        // Important note: The world size must be a power of 2 and have the width and height equal
-        let world_size = Vec2::new(2048.0, 2048.0);
+        let world_size = Vec2::new(3048.0, 1048.0);
         let wgpu_context = WgpuContext::new(window).await?;
         let renderer = Renderer::new(&wgpu_context, &world_size).unwrap();
 
@@ -55,7 +54,7 @@ impl State {
         })?;
         
         let collision_system = CollisionSystem::new(&wgpu_context, DIMENSION, &particles, &grid);
-
+        
         Ok(Self {
             world_size,
             wgpu_context,
@@ -115,13 +114,17 @@ impl State {
     
     fn update(&mut self){
         let dt = self.render_timer.get_delta().as_secs_f32();
-
+        
         {
             let mut encoder = self.wgpu_context.get_device().create_command_encoder(
                 &wgpu::CommandEncoderDescriptor { label: Some("Compute Encoder") }
             );
-            self.grid.update(&mut encoder, &self.wgpu_context, &mut self.gpu_profiler);
-            self.collision_system.solve_collisions(&self.wgpu_context, dt, encoder,&mut self.gpu_profiler);
+            if self.particles.is_it_time_to_sort(){
+                self.particles.sort_by_cell_id(&mut encoder, &mut self.gpu_profiler, self.grid.cell_size());
+                self.particles.reset_last_sort_time();                
+            }
+            self.grid.update(&mut encoder, &mut self.gpu_profiler);
+            self.collision_system.solve_collisions(&self.wgpu_context, encoder, &mut self.gpu_profiler);
         }
         
         self.particles.update_positions(dt, &self.wgpu_context, &mut self.gpu_profiler);

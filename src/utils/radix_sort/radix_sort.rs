@@ -177,7 +177,7 @@ impl GPUSorter {
         });
     }
     
-    pub fn build_histogram(&mut self, encoder: &mut wgpu::CommandEncoder, total_threads: (u32, u32, u32), push_constants: &PushConstants, ping_pong: &bool){
+    pub fn build_histogram(&self, encoder: &mut wgpu::CommandEncoder, total_threads: (u32, u32, u32), push_constants: &PushConstants, ping_pong: &bool){
         let ping_pong_bind_group = if *ping_pong {&self.sorting_buffers.bind_group_ping} else {&self.sorting_buffers.bind_group_pong};
         self.histogram_shader.dispatch_by_items(
             encoder,
@@ -187,7 +187,7 @@ impl GPUSorter {
         );
     }
 
-    pub fn scatter(&mut self, encoder: &mut wgpu::CommandEncoder, total_threads: (u32, u32, u32), push_constants: &PushConstants, ping_pong: &bool){
+    pub fn scatter(&self, encoder: &mut wgpu::CommandEncoder, total_threads: (u32, u32, u32), push_constants: &PushConstants, ping_pong: &bool){
         let ping_pong_bind_group = if *ping_pong {&self.sorting_buffers.bind_group_ping} else {&self.sorting_buffers.bind_group_pong};
         self.scatter_shader.dispatch_by_items(
             encoder,
@@ -196,7 +196,7 @@ impl GPUSorter {
             ping_pong_bind_group       
         );
     }
-    pub fn sort(&mut self, encoder: &mut wgpu::CommandEncoder, sort_first_n:Option<u32>) {
+    pub fn sort(&self, encoder: &mut wgpu::CommandEncoder, sort_first_n:Option<u32>) {
         let sort_buffers = &self.sorting_buffers;
         
         let num_elements = sort_first_n.unwrap_or(sort_buffers.len());
@@ -223,8 +223,7 @@ impl GPUSorter {
     pub fn get_histogram(&mut self, wgpu_context: &WgpuContext) -> Result<&Vec<u32>, BufferAsyncError> {
         self.sorting_buffers.histogram.download(wgpu_context)
     }
-
-
+    
     pub fn sort_indirect(
         &self,
         encoder: &mut wgpu::CommandEncoder,

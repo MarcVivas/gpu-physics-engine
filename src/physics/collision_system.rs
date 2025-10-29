@@ -5,7 +5,6 @@ use crate::particles::particle_system::ParticleSystem;
 use crate::physics::collision_cell_builder::CollisionCellBuilder;
 use crate::physics::collision_solver::CollisionSolver;
 use crate::renderer::wgpu_context::WgpuContext;
-use crate::utils::gpu_buffer::GpuBuffer;
 
 pub struct CollisionSystem {
     collision_cell_builder: CollisionCellBuilder,
@@ -28,7 +27,7 @@ impl CollisionSystem {
         self.collision_solver.refresh_buffers(wgpu_context, particle_system, grid, &self.collision_cell_builder);
     }
     
-    pub fn solve_collisions(&mut self, wgpu_context: &WgpuContext, dt: f32, mut encoder: CommandEncoder, gpu_profiler: &mut GpuProfiler){
+    pub fn solve_collisions(&mut self, wgpu_context: &WgpuContext, mut encoder: CommandEncoder, gpu_profiler: &mut GpuProfiler){
         self.collision_cell_builder.build_collision_cells(wgpu_context, &mut encoder, gpu_profiler);
         gpu_profiler.resolve_queries(&mut encoder);
 
