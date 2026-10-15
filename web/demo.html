@@ -1,0 +1,91 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gpu-physics-engine on WebGPU</title>
+<style>
+  :root { color-scheme: dark; --bg: #101318; --fg: #d8dee9; --dim: #8892a6; --line: #262c38; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; display: flex; flex-direction: column; height: 100vh; }
+  header { display: flex; gap: 16px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header b { font-weight: 600; } header span { color: var(--dim); }
+  main { flex: 1; min-height: 0; padding: 0 16px 16px; display: flex; }
+  canvas { flex: 1; min-width: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+  button { background: #1b212c; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  button[aria-pressed=true] { border-color: #5b8def; }
+  #msg { color: #e5a557; }
+</style>
+<header>
+  <b>gpu-physics-engine</b>
+  <span id="stats">starting...</span>
+  <span>
+    <button data-tool="ball" aria-pressed="true">ball</button>
+    <button data-tool="box" aria-pressed="false">crate</button>
+    <button data-tool="sand" aria-pressed="false">sand</button>
+    <button data-tool="rope" aria-pressed="false">rope</button>
+  </span>
+  <button id="reset">reset</button>
+  <span id="msg"></span>
+</header>
+<main><canvas id="c"></canvas></main>
+<script type="module">
+import { GpuWorld } from "./gpuphys_webgpu.js";
+import { Renderer } from "./renderer.js";
+const q = new URLSearchParams(location.search), kernels = q.get("kernels") || "../gpu/spirv";
+const msg = document.getElementById("msg"), stats = document.getElementById("stats"), canvas = document.getElementById("c");
+const W = 64, H = 36;
+function fit() { const r = canvas.getBoundingClientRect(), d = devicePixelRatio || 1; canvas.width = Math.max(2, r.width * d | 0); canvas.height = Math.max(2, r.height * d | 0); }
+addEventListener("resize", fit); fit();
+
+if (!navigator.gpu) { msg.textContent = "this browser has no WebGPU: see the WebAssembly build (runtime/wasm)"; throw new Error("no WebGPU"); }
+const adapter = await navigator.gpu.requestAdapter();
+const device = await adapter.requestDevice({ requiredLimits: GpuWorld.limits(adapter) });
+device.addEventListener("uncapturederror", (e) => { msg.textContent = e.error.message.split("\n")[0]; console.error(e.error.message); });
+device.lost.then((i) => { msg.textContent = "WebGPU device lost: " + i.message; console.error("device lost", i.reason, i.message); });
+let world, renderer, tool = "ball", t0 = performance.now(), frames = 0, fps = 0, last = performance.now();
+
+async function reset() {
+  world?.device && (world.positions.destroy(), world.previous.destroy());
+  world = await GpuWorld.create(device, { kernels, capacity: 30000, world: [W, H], maxRadius: 0.4, gravity: [0, -18] });
+  const tiles = new Uint32Array(W * H);
+  for (let x = 0; x < W; x++) { tiles[x] = 1; tiles[x + (H - 1) * W] = 1; }
+  for (let y = 0; y < H; y++) { tiles[y * W] = 1; tiles[y * W + W - 1] = 1; }
+  for (let x = 14; x < 30; x++) tiles[x + 9 * W] = 1;
+  for (let x = 36; x < 52; x++) tiles[x + 16 * W] = 1;
+  world.setTileGrid(W, H, tiles);
+  for (let i = 0; i < 6; i++) world.addBox(18 + i * 2, 12 + (i % 2), 1.4, 1.0, i * 0.3);
+  world.addRope(44, 30, 52, 30, 14, 0.09, true, false);
+  renderer = new Renderer(device, canvas, world);
+}
+await reset();
+document.getElementById("reset").onclick = reset;
+for (const b of document.querySelectorAll("[data-tool]")) b.onclick = () => { tool = b.dataset.tool; document.querySelectorAll("[data-tool]").forEach((o) => o.setAttribute("aria-pressed", o === b)); };
+
+let down = false, mx = 0, my = 0;
+canvas.addEventListener("pointerdown", (e) => { down = true; canvas.setPointerCapture(e.pointerId); [mx, my] = renderer.toWorld(e.clientX, e.clientY); if (tool !== "sand") spawn(true); });
+canvas.addEventListener("pointermove", (e) => { [mx, my] = renderer.toWorld(e.clientX, e.clientY); });
+canvas.addEventListener("pointerup", () => { down = false; });
+function spawn(click) {
+  try {
+    if (tool === "sand") world.brushSand(mx, my, 0.8, 24, 0.09);
+    else if (click && tool === "ball") world.addBall(mx, my, 0.3 + Math.random() * 0.2, (Math.random() - 0.5) * 4, 0);
+    else if (click && tool === "box") world.addBox(mx, my, 0.9 + Math.random() * 0.8, 0.8, Math.random() * 3);
+    else if (click && tool === "rope") world.addRope(mx, my, mx + 6, my, 12, 0.09, true, false);
+  } catch (e) { msg.textContent = e.message; }
+}
+function frame(now) {
+  if (down && tool === "sand") spawn(false);
+  world.step(1 / 60);
+  if (!q.has("norender")) renderer.draw();
+  frames++;
+  if (now - last > 500) { fps = frames * 1000 / (now - last); frames = 0; last = now; stats.textContent = `${world.n} circles · ${fps.toFixed(0)} fps · ${adapter.info?.description || adapter.info?.vendor || "WebGPU"}`; window.__demo = { n: world.n, fps, steps: world.steps }; }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+// for tests and screenshots: the current frame as a PNG data URL
+window.__readPos = async () => (await world.readPositions()).length;
+window.__snapSize = async (w, h) => (await renderer.snapshot(w, h)).data.length;
+window.__snap = async () => {
+  const img = await renderer.snapshot(960, 540), c = document.createElement("canvas");
+  c.width = 960; c.height = 540; c.getContext("2d").putImageData(img, 0, 0);
+  return c.toDataURL("image/png");
+};
+</script>

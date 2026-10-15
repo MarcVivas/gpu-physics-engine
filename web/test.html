@@ -1,0 +1,177 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>gpuphys WebGPU tests</title>
+<pre id="log">running...</pre>
+<script type="module">
+import { GpuWorld } from "./gpuphys_webgpu.js";
+import { Windfoil, windingAt, coverage, circleContour, polyContour, blobContour } from "./windfoil.js";
+const q = new URLSearchParams(location.search);
+const kernels = q.get("kernels") || "../spirv";
+const only = q.get("only");
+const results = [], log = document.getElementById("log");
+const check = (name, ok, extra = "") => { results.push({ name, ok: !!ok, extra: String(extra) }); log.textContent += `\n${ok ? "ok  " : "FAIL"} ${name} ${extra}`; };
+const nan = (a) => a.some((v) => !Number.isFinite(v));
+const frames = async (w, n, dt = 1 / 60) => { for (let i = 0; i < n; i++) w.step(dt); await w.device.queue.onSubmittedWorkDone(); };
+const floorTiles = (W, H) => { const c = new Uint32Array(W * H); for (let x = 0; x < W; x++) c[x] = 1; return c; };
+
+async function main() {
+  const adapter = await navigator.gpu.requestAdapter();
+  const device = await adapter.requestDevice({ requiredLimits: GpuWorld.limits(adapter) });
+  const errors = []; device.addEventListener("uncapturederror", (e) => errors.push(e.error.message));
+  const make = (o = {}) => GpuWorld.create(device, { kernels, capacity: 256, world: [12, 8], maxRadius: 0.4, ...o });
+  const t0 = performance.now();
+  const sections = {
+    async ball() {
+      const w = await make(); w.setTileGrid(12, 8, floorTiles(12, 8));
+      const b = w.addBall(5, 3, 0.35);
+      await frames(w, 90);
+      const p = await w.bodyPosition(b);
+      check("a ball falls and rests on the floor", Math.abs(p.y - 1.35) < 0.06, `y ${p.y.toFixed(3)}`);
+    },
+    async crate() {
+      const w = await make(); w.setTileGrid(12, 8, floorTiles(12, 8));
+      const id = w.addBox(5, 1.9, 1, 1, 0.4);
+      const rest = [...w.joints.values()].map((j) => j[3]);
+      await frames(w, 60);
+      const pos = await w.readPositions(), cs = w.bodies.get(id).circles;
+      let cx = 0, cy = 0; for (const c of cs) { cx += pos[2 * c]; cy += pos[2 * c + 1]; }
+      cx /= cs.length; cy /= cs.length;
+      const ang = Math.atan2(pos[2 * cs[1] + 1] - pos[2 * cs[0] + 1], pos[2 * cs[1]] - pos[2 * cs[0]]);
+      const turn = Math.abs(ang) % (Math.PI / 2);
+      check("a crate lands flat", Math.abs(cy - 1.5) < 0.09 && Math.min(turn, Math.PI / 2 - turn) < 0.14, `y ${cy.toFixed(3)} angle ${ang.toFixed(3)}`);
+      let worst = 0; let k = 0;
+      for (const j of w.joints.values()) { const d = Math.hypot(pos[2 * j[0]] - pos[2 * j[1]], pos[2 * j[0] + 1] - pos[2 * j[1] + 1]); worst = Math.max(worst, Math.abs(d - rest[k++]) / rest[k - 1]); }
+      check("...and keeps its shape", worst < 0.08, `worst joint error ${(100 * worst).toFixed(1)}%`);
+    },
+    async curves() {
+      const w = await make({ world: [12, 8] });
+      check("a Bezier collider is accepted", w.addCurve(2, 6, 6, 2, 10, 6, 0.4, 0, 0) === 0 && w.curveCount === 1);
+      const b = w.addBall(5, 7, 0.35);
+      await frames(w, 420);
+      const p = await w.bodyPosition(b);
+      check("a ball comes to rest in a bowl made of one curve", Math.abs(p.x - 6) < 1.2 && p.y > 4.3 && p.y < 4.65, `at (${p.x.toFixed(2)}, ${p.y.toFixed(2)})`);
+      // a solid hill on the floor: balls dropped on its flanks end up beside it, never inside
+      const h = await make({ world: [12, 8] }); h.setTileGrid(12, 8, floorTiles(12, 8));
+      h.addCurve(2, 1, 6, 9, 10, 1, 0.4, 0, -1);                 // apex (6, 5); the inside is below
+      const xs = [3.5, 4.5, 5.0, 7.0, 7.5, 8.5], ids = xs.map((x, i) => h.addBall(x, 7.4 - 1.2 * (i % 3), 0.4));
+      await frames(h, 900);
+      let down = 0, inside = 0;
+      for (const id of ids) {
+        const q = await h.bodyPosition(id), t = (q.x - 2) / 8, top = 1 + 16 * t * (1 - t);
+        down += q.y < 4; inside += q.x > 2 && q.x < 10 && q.y < top - 0.2;
+      }
+      check("balls roll down a solid hill and none is inside it", down === 6 && inside === 0, `down ${down}, inside ${inside}`);
+    },
+    async windfoil() {
+      const N = 64, view = 10, scale = N / view;
+      const target = device.createTexture({ size: [N, N], format: "rgba8unorm", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
+      const rb = device.createBuffer({ size: N * N * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      const star = []; for (let i = 0; i < 5; i++) { const a = Math.PI / 2 + i * 4 * Math.PI / 5; star.push(5 + 4 * Math.cos(a), 5 + 4 * Math.sin(a)); }
+      const cases = [
+        ["a circle", [circleContour(5, 5, 3.2)], "nonzero"],
+        ["a ring", [circleContour(5, 5, 3.6), circleContour(5, 5, 2, 8, true)], "nonzero"],
+        ["a pentagram, even-odd", [polyContour(star)], "evenodd"],
+        ["a pentagram, nonzero", [polyContour(star)], "nonzero"],
+        ["a blob", [blobContour([2, 2, 8, 1.5, 9, 6, 5, 9, 1.5, 6.5])], "nonzero"],
+        ["two circles, even-odd", [circleContour(4, 5, 2.5), circleContour(6, 5, 2.5)], "evenodd"],
+      ];
+      for (const [name, path, rule] of cases) {
+        const wf = Windfoil.create(device, "rgba8unorm").setPath(path, { pad: 1 / scale });
+        const enc = device.createCommandEncoder();
+        const pass = enc.beginRenderPass({ colorAttachments: [{ view: target.createView(), clearValue: [0, 0, 0, 0], loadOp: "clear", storeOp: "store" }] });
+        wf.draw(pass, { camera: [5, 5], scale, res: [N, N], color: [1, 1, 1, 1], rule });
+        pass.end();
+        enc.copyTextureToBuffer({ texture: target }, { buffer: rb, bytesPerRow: N * 4 }, [N, N]);
+        device.queue.submit([enc.finish()]);
+        await rb.mapAsync(GPUMapMode.READ);
+        const px = new Uint8Array(rb.getMappedRange().slice(0)); rb.unmap();
+        let worst = 0, sum = 0, ink = 0, wi = 0, wj = 0, wref = 0, wgot = 0;
+        const ss = 10;
+        for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+          let acc = 0;                                           // supersampled reference; the texture's row 0 is the top (world y = 10)
+          for (let b = 0; b < ss; b++) for (let a = 0; a < ss; a++)
+            acc += windingAt(path, (i + (a + 0.5) / ss) / scale, view - (j + (b + 0.5) / ss) / scale);
+          const ref = coverage(acc / (ss * ss), rule), got = px[4 * (j * N + i) + 3] / 255;
+          const d = Math.abs(ref - got); if (d > worst) { worst = d; wi = i; wj = j; wref = ref; wgot = got; } sum += d; ink += got;
+        }
+        check(`windfoil fills ${name} like supersampling`, worst < 0.06 && sum / (N * N) < 0.001 && ink > 50, `worst ${worst.toFixed(3)} at (${wi},${wj}) ref ${wref.toFixed(3)} got ${wgot.toFixed(3)} mean ${(sum / (N * N)).toFixed(4)} ink ${ink.toFixed(0)}`);
+        wf.params.destroy();
+      }
+    },
+    async sand() {
+      const w = await make(); w.setTileGrid(12, 8, floorTiles(12, 8));
+      let s = 7; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+      w.brushSand(6, 3.5, 0.6, 40, 0.08, rnd);
+      await frames(w, 80);
+      const pos = await w.readPositions();
+      let low = 99; for (let i = 0; i < w.n; i++) low = Math.min(low, pos[2 * i + 1]);
+      check("sand settles above the floor", !nan([...pos]) && low > 1.0 + 0.08 - 0.04 && w.n === 40, `lowest ${low.toFixed(3)}`);
+    },
+    async rope() {
+      const w = await make();
+      const id = w.addRope(4, 6, 8, 6, 10, 0.07);
+      await frames(w, 120);
+      const pos = await w.readPositions(), cs = w.bodies.get(id).circles;
+      const end = cs[cs.length - 1];
+      check("a pinned rope hangs from its pin", Math.hypot(pos[2 * cs[0]] - 4, pos[2 * cs[0] + 1] - 6) < 0.05 && pos[2 * end + 1] < 3.2, `pin ${pos[2 * cs[0]].toFixed(2)},${pos[2 * cs[0] + 1].toFixed(2)} end y ${pos[2 * end + 1].toFixed(2)}`);
+    },
+    async material() {
+      const w = await make({ world: [12, 8] }); w.setTileGrid(12, 8, floorTiles(12, 8));
+      w.setWorldMaterial({ friction: 0.4, bounciness: 0 });
+      const live = w.addBall(2, 2.6), dead = w.addBall(4, 2.6);
+      check("set_material is available", w.setMaterial(live, { friction: 0.4, bounciness: 0.8 }));
+      const floater = w.addBall(8, 4), ghost = w.addBall(8, 5);
+      w.setMaterial(floater, { gravityScale: 0 });
+      w.setFilter(floater, { category: 2, mask: 2 }); w.setFilter(ghost, { category: 4, mask: 4 });
+      const low = { [live]: 99, [dead]: 99 }, peak = { [live]: 0, [dead]: 0 };
+      for (let s = 0; s < 48; s++) {
+        w.step(1 / 60);
+        if (s % 2 === 1) { await w.device.queue.onSubmittedWorkDone(); const pos = await w.readPositions();
+          for (const id of [live, dead]) { const y = pos[2 * w.bodies.get(id).circles[0] + 1];
+            if (y < low[id]) low[id] = y; else if (y > low[id] + 0.02) peak[id] = Math.max(peak[id], y - low[id]); } }
+      }
+      const pos = await w.readPositions();
+      const fy = pos[2 * w.bodies.get(floater).circles[0] + 1], gy = pos[2 * w.bodies.get(ghost).circles[0] + 1];
+      check("rubber rebounds, the default material does not", peak[live] > peak[dead] + 0.15, `live ${peak[live].toFixed(2)} dead ${peak[dead].toFixed(2)}`);
+      check("gravity scale 0 floats", Math.abs(fy - 4) < 0.05, `y ${fy.toFixed(3)}`);
+      check("masks that exclude each other pass through", gy < fy - 0.3, `ghost ${gy.toFixed(2)} floater ${fy.toFixed(2)}`);
+    },
+    async sensor() {
+      const w = await make();
+      const floor = w.addBall(6, 4); w.setMaterial(floor, { gravityScale: 0 });
+      const s = w.addBall(6, 4.9); w.setSensor(s);
+      await frames(w, 30);
+      const p = await w.bodyPosition(s);
+      check("a sensor body passes through other circles", p.y < 3.8, `y ${p.y.toFixed(2)}`);
+    },
+    async removal() {
+      const w = await make(); w.setTileGrid(12, 8, floorTiles(12, 8));
+      const a = w.addBox(3, 3, 1, 1), b = w.addBox(6, 3, 1, 1), c = w.addBall(9, 3);
+      w.removeBody(a);
+      await frames(w, 60);
+      const pos = await w.readPositions(), cs = w.bodies.get(b).circles;
+      let cy = 0; for (const k of cs) cy += pos[2 * k + 1]; cy /= cs.length;
+      const pc = await w.bodyPosition(c);
+      check("removing a body keeps the others whole", w.n === 5 && Math.abs(cy - 1.5) < 0.1 && Math.abs(pc.y - 1.35) < 0.08, `n ${w.n} crate y ${cy.toFixed(2)} ball y ${pc.y.toFixed(2)}`);
+    },
+    async many() {
+      const w = await make({ capacity: 6000, world: [64, 36], maxRadius: 0.1 }); w.setTileGrid(64, 36, floorTiles(64, 36));
+      let s = 3; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+      w.brushSand(32, 20, 12, 4000, 0.08, rnd);
+      const t = performance.now();
+      await frames(w, 30);
+      const ms = (performance.now() - t) / 30;
+      const pos = await w.readPositions();
+      let low = 99; for (let i = 0; i < w.n; i++) low = Math.min(low, pos[2 * i + 1]);
+      check("4000 grains step without NaNs and stay above the floor", !nan([...pos]) && low > 0.95, `${ms.toFixed(0)} ms/step on this adapter, lowest ${low.toFixed(2)}`);
+    },
+  };
+  for (const [name, fn] of Object.entries(sections)) {
+    if (only && !only.split(",").includes(name)) continue;
+    try { await fn(); } catch (e) { check(name + " threw", false, e.stack || e); }
+  }
+  check("no WebGPU validation errors", errors.length === 0, errors.slice(0, 3).join(" | "));
+  log.textContent += `\n(${((performance.now() - t0) / 1000).toFixed(0)} s)`;
+}
+main().catch((e) => check("setup failed", false, e.stack || e)).finally(() => { window.__results = results; window.__done = true; });
+</script>
